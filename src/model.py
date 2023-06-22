@@ -692,7 +692,7 @@ class VI_adv_dual(nn.Module):
         log_q = reduce(q.log_prob(y))
         return torch.exp(log_q)
         
-    def forward(self, model:nn.Module, aux_y_0:nn.Module, aux_c_0:nn.Module, aux_y_1:nn.Module, aux_c_1:nn.Module, x:Tensor, y:Tensor, c:Tensor) -> Tuple[Tensor, Dict]:
+    def forward(self, model:nn.Module, aux_y_0:nn.Module, aux_c_0:nn.Module, aux_y_1:nn.Module, aux_c_1:nn.Module, x:Tensor, y:Tensor, c:Tensor, device:torch.device) -> Tuple[Tensor, Dict]:
         
         # forward pass through the model
         outputs = model(x, y)
@@ -724,36 +724,36 @@ class VI_adv_dual(nn.Module):
         y1 = y[c == 1]
         c0 = c[y == 0]
         c1 = c[y == 1]
-        nc0 = sum(c==0)
-        nc1 = sum(c==1)
-        ny0 = sum(y==0)
-        ny1 = sum(y==1)
+        ny0 = len(y0)
+        ny1 = len(y1)
+        nc0 = len(c0)
+        nc1 = len(c1)
+
+        # When there is no sample with the corresponding attribute value, set the corresponding loss to 0
+        # requires_grad is set to True to enable backward prop when training the auxiliary network
+        zero_tensor = torch.tensor([0.], device=device, requires_grad=True)
 
         #Train the encoder to NOT predict y from z given c
-        aux_y0_loss = self.adversarial_loss(aux_y_0, z0, y0).mean() if ny0 != 0 else 0
-        aux_y1_loss = self.adversarial_loss(aux_y_1, z1, y1).mean() if ny1 != 0 else 0
+        aux_y0_loss = self.adversarial_loss(aux_y_0, z0, y0).mean() if ny0 != 0 else zero_tensor
+        aux_y1_loss = self.adversarial_loss(aux_y_1, z1, y1).mean() if ny1 != 0 else zero_tensor
         exp_log_qyz = (ny0*aux_y0_loss + ny1*aux_y1_loss)/(ny0+ny1)
         m2 = self.bhz*exp_log_qyz
 
         #Train the encoder to NOT predict c from w given y
-        aux_c0_loss = self.adversarial_loss(aux_c_0, w0, c0).mean() if nc0 != 0 else 0
-        aux_c1_loss = self.adversarial_loss(aux_c_1, w1, c1).mean() if nc1 != 0 else 0
+        aux_c0_loss = self.adversarial_loss(aux_c_0, w0, c0).mean() if nc0 != 0 else zero_tensor
+        aux_c1_loss = self.adversarial_loss(aux_c_1, w1, c1).mean() if nc1 != 0 else zero_tensor
         exp_log_qc = (nc0*aux_c0_loss + nc1*aux_c1_loss)/(nc0+nc1)
         m3 = self.bhw*exp_log_qc
 
         csvaeLoss = m1.mean() + m2 + m3
 
         #Train the aux net to predict y from z given c
-        ny_0 = self.byz*self.adversarial_loss(aux_y_0, z0.detach(), y0) if ny0 != 0 else torch.tensor([0.])
-        aux_y_0_loss = - ny_0.mean()
-        ny_1 = self.adversarial_loss(aux_y_1, z1.detach(), y1) if ny1 != 0 else torch.tensor([0.])
-        aux_y_1_loss = - ny_1.mean()
+        aux_y_0_loss = - self.byz*self.adversarial_loss(aux_y_0, z0.detach(), y0).mean() if ny0 != 0 else zero_tensor
+        aux_y_1_loss = - self.byz*self.adversarial_loss(aux_y_1, z1.detach(), y1).mean() if ny1 != 0 else zero_tensor
 
         #Train the aux net to predict c from w given y
-        nc_0 = self.bc*self.adversarial_loss(aux_c_0, w0.detach(), c0) if nc0 != 0 else torch.tensor([0.])
-        aux_c_0_loss = - nc_0.mean()
-        nc_1 = self.adversarial_loss(aux_c_1, w1.detach(), c1) if nc1 != 0 else torch.tensor([0.])
-        aux_c_1_loss = - nc_1.mean()
+        aux_c_0_loss = - self.bc*self.adversarial_loss(aux_c_0, w0.detach(), c0).mean() if nc0 != 0 else zero_tensor
+        aux_c_1_loss= - self.bc*self.adversarial_loss(aux_c_1, w1.detach(), c1).mean() if nc1 != 0 else zero_tensor
         
         # prepare the output
         with torch.no_grad():

@@ -26,7 +26,7 @@ def train(train_loader,csvae, aux_y_0, aux_c_0, aux_y_1, aux_c_1, optimizer_csva
         c = c.to(device)
         
         # perform a forward pass through the model and compute the ELBO
-        csvae_loss, aux_y_0_loss, aux_c_0_loss, aux_y_1_loss, aux_c_1_loss, diagnostics, outputs = vi(csvae, aux_y_0, aux_c_0, aux_y_1, aux_c_1, x, y, c)
+        csvae_loss, aux_y_0_loss, aux_c_0_loss, aux_y_1_loss, aux_c_1_loss, diagnostics, outputs = vi(csvae, aux_y_0, aux_c_0, aux_y_1, aux_c_1, x, y, c, device)
         
         optimizer_csvae.zero_grad()
         csvae_loss.backward()
@@ -71,7 +71,7 @@ def eval(valid_loader, csvae, aux_y_0, aux_c_0, aux_y_1, aux_c_1, vi, device, ep
         c = c.to(device)
         
         # perform a forward pass through the model and compute the ELBO
-        csvae_loss, aux_y_0_loss, aux_c_0_loss, aux_y_1_loss, aux_c_1_loss, diagnostics, outputs = vi(csvae, aux_y_0, aux_c_0, aux_y_1, aux_c_1, x, y, c)
+        csvae_loss, aux_y_0_loss, aux_c_0_loss, aux_y_1_loss, aux_c_1_loss, diagnostics, outputs = vi(csvae, aux_y_0, aux_c_0, aux_y_1, aux_c_1, x, y, c, device)
         
         # gather data for the validation step
         for k, v in diagnostics.items():

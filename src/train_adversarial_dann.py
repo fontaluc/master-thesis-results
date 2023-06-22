@@ -137,6 +137,8 @@ def main(cfg):
     csvae = csvae.to(device)
     aux_y = aux_y.to(device)
     aux_c = aux_c.to(device)
+    vi.class_embeddings.to(device)
+    vi.color_embeddings.to(device)
 
     # training..
     for epoch in range(num_epochs):

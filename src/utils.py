@@ -1,8 +1,9 @@
 import torch
 from sklearn.metrics import accuracy_score
 import numpy as np
-from model import AUX, MMD
+from model import AUX, MMD, nl_adversary, l_adversary
 import torch.nn as nn
+import torch.nn.functional as F
 from matplotlib import pyplot as plt
     
 def get_cmnist_accuracy(data_loader, classifier, device):
@@ -564,8 +565,8 @@ def train_marg_adversary(net, csvae, lr, device, train_loader, valid_loader, pat
     plt.title("Train and validation accuracy for predicting c")
     plt.savefig(f'{path}/acc_c_{tag}.png')
 
-    torch.save(aux_y.state_dict(), f'{path}/adv_y_{tag}.pt')
-    torch.save(aux_c.state_dict(), f'{path}/adv_c_{tag}.pt')
+    torch.save(aux_y.state_dict(), f'{path}/adv_y_marg_{tag}.pt')
+    torch.save(aux_c.state_dict(), f'{path}/adv_c_marg_{tag}.pt')
 
     return aux_y, aux_c
 
@@ -740,8 +741,8 @@ def train_cond_adversary(net, csvae, lr, device, train_loader, valid_loader, pat
     plt.title("Train and validation accuracy for predicting c")
     plt.savefig(f'{path}/acc_c_{tag}.png')
 
-    torch.save(aux_y.state_dict(), f'{path}/adv_y_{tag}.pt')
-    torch.save(aux_c.state_dict(), f'{path}/adv_c_{tag}.pt')
+    torch.save(aux_y.state_dict(), f'{path}/adv_y_cond_{tag}.pt')
+    torch.save(aux_c.state_dict(), f'{path}/adv_c_cond_{tag}.pt')
 
     return aux_y, aux_c
 
@@ -784,7 +785,7 @@ def eval_cond_adversary(csvae, aux_y, aux_c, test_loader, device):
         test_accuracy_c = np.sum(test_accuracies_c) / n_test
         return test_accuracy_y, test_accuracy_c
 
-def train_adversary_dual(net, csvae, lr, device, train_loader, valid_loader, path, tag='nl', num_epochs = 20, validation_every_steps = 500):
+def train_adversary_dual(net, csvae, lr, device, train_loader, valid_loader, path, num_epochs = 20, validation_every_steps = 500):
 
     aux_y0 = net(z_dim=2)
     aux_c0 = net(z_dim=2)
@@ -805,10 +806,10 @@ def train_adversary_dual(net, csvae, lr, device, train_loader, valid_loader, pat
     n_valid = len(valid_loader.dataset)
     
     step = 0
-    aux_y_0.train()
-    aux_c_0.train()
-    aux_y_1.train()
-    aux_c_1.train()
+    aux_y0.train()
+    aux_c0.train()
+    aux_y1.train()
+    aux_c1.train()
 
     train_accuracies_y = []
     valid_accuracies_y = []
@@ -839,33 +840,70 @@ def train_adversary_dual(net, csvae, lr, device, train_loader, valid_loader, pat
             y1 = y[c == 1]
             c0 = c[y == 0]
             c1 = c[y == 1]
-            nc0 = sum(c==0)
-            nc1 = sum(c==1)
-            ny0 = sum(y==0)
-            ny1 = sum(y==1)
-            
-            output_y_0 = aux_y0(z0)
-            output_y_1 = aux_y1(z1)
-            loss_y = (nc0*loss_fn(output_y0, y0.long()) + nc1*loss_fn(output_y1, y1.long()))/(nc0 + nc1)
-            optimizer_y.zero_grad()
-            loss_y.backward()
-            optimizer_y.step()
+            ny0 = len(y0)
+            ny1 = len(y1)
+            nc0 = len(c0)
+            nc1 = len(c1)
 
-            output_c0 = aux_c0(w0)
-            output_c1 = aux_c1(w1)
-            loss_c = (ny0*loss_fn(output_c0, c0.long()) + ny1*loss_fn(output_c1, c1.long()))/(ny0 + ny1)
-            optimizer_c.zero_grad()
-            loss_c.backward()
-            optimizer_c.step()
+            accuracy_y0 = 0.
+            accuracy_y1 = 0.
+            accuracy_c0 = 0.
+            accuracy_c1 = 0.
+            
+            # Detach latent variable to avoid computing the gradient of the csvae weights which is not needed for training the adversaries
+            # Retain the graph of the first backward pass for the losses of the two auxiliary networks which take the same latent variable
+            # as input because they share the same computational graph (due to the shared input), even though the input is detached
+            # from the graph (?)
+
+            if ny0 != 0:
+                output_y0 = aux_y0(z0.detach()) 
+                loss_y0 = loss_fn(output_y0, y0.long())
+
+                optimizer_y0.zero_grad()
+                loss_y0.backward(retain_graph = True)
+                optimizer_y0.step()
+
+                predictions_y0 = output_y0.max(1)[1]
+                accuracy_y0 = accuracy_score(y0.detach().cpu().numpy(), predictions_y0.cpu().numpy())
+
+            if ny1 != 0:            
+                output_y1 = aux_y1(z1.detach())
+                loss_y1 = loss_fn(output_y1, y1.long())
+
+                optimizer_y1.zero_grad()
+                loss_y1.backward()
+                optimizer_y1.step()
+
+                predictions_y1 = output_y1.max(1)[1]
+                accuracy_y1 = accuracy_score(y1.detach().cpu().numpy(), predictions_y1.cpu().numpy())
+
+            if nc0 != 0:
+                output_c0 = aux_c0(w0.detach())
+                loss_c0 = loss_fn(output_c0, c0.long())
+
+                optimizer_c0.zero_grad()
+                loss_c0.backward(retain_graph = True)
+                optimizer_c0.step()
+
+                predictions_c0 = output_c0.max(1)[1]
+                accuracy_c0 = accuracy_score(c0.detach().cpu().numpy(), predictions_c0.cpu().numpy())
+
+            if nc1 != 0:
+                output_c1 = aux_c1(w1.detach())
+                loss_c1 = loss_fn(output_c1, c1.long())
+
+                optimizer_c1.zero_grad()
+                loss_c1.backward()
+                optimizer_c1.step()
+
+                predictions_c1 = output_c1.max(1)[1]
+                accuracy_c1 = accuracy_score(c1.detach().cpu().numpy(), predictions_c1.cpu().numpy())
             
             step += 1
             
-            # Compute accuracy.
-            predictions_y = output_y.max(1)[1]
-            train_accuracies_batches_y.append(accuracy_score(y.detach().cpu().numpy(), predictions_y.cpu().numpy()))
-
-            predictions_c = output_c.max(1)[1]
-            train_accuracies_batches_c.append(accuracy_score(c.cpu().numpy(), predictions_c.cpu().numpy()))
+            # Average accuracy.
+            train_accuracies_batches_y.append((ny0*accuracy_y0 + ny1*accuracy_y1)/(ny0 + ny1))
+            train_accuracies_batches_c.append((nc0*accuracy_c0 + nc1*accuracy_c1)/(nc0 + nc1))
             
             if step % validation_every_steps == 0:
                 
@@ -880,8 +918,10 @@ def train_adversary_dual(net, csvae, lr, device, train_loader, valid_loader, pat
                 valid_accuracies_batches_y = []
                 valid_accuracies_batches_c = []
                 with torch.no_grad():
-                    aux_y.eval()
-                    aux_c.eval()
+                    aux_y0.eval()
+                    aux_c0.eval()
+                    aux_y1.eval()
+                    aux_c1.eval()
                     for x, y, c in valid_loader:
 
                         x = x.to(device)
@@ -901,38 +941,48 @@ def train_adversary_dual(net, csvae, lr, device, train_loader, valid_loader, pat
                         y1 = y[c == 1]
                         c0 = c[y == 0]
                         c1 = c[y == 1]
-                        nc0 = sum(c==0)
-                        nc1 = sum(c==1)
-                        ny0 = sum(y==0)
-                        ny1 = sum(y==1)
+                        ny0 = len(y0)
+                        ny1 = len(y1)
+                        nc0 = len(c0)
+                        nc1 = len(c1)
 
-                        output_y0 = aux_y0(z)
-                        loss_y0 = loss_fn(output_y0, y0.long())
-                        predictions_y0 = output_y0.max(1)[1]
+                        accuracy_y0 = 0.
+                        accuracy_y1 = 0.
+                        accuracy_c0 = 0.
+                        accuracy_c1 = 0.
 
-                        output_c0 = aux_c0(w)
-                        loss_c0 = loss_fn(output_c0, c0.long())
-                        predictions_c0 = output_c0.max(1)[1]
+                        if ny0 != 0:
+                            output_y0 = aux_y0(z0)
+                            loss_y0 = loss_fn(output_y0, y0.long())
+                            predictions_y0 = output_y0.max(1)[1]
+                            accuracy_y0 = accuracy_score(y0.detach().cpu().numpy(), predictions_y0.detach().cpu().numpy())
 
-                        output_y1 = aux_y1(z)
-                        loss_y1 = loss_fn(output_y1, y1.long())
-                        predictions_y1 = output_y1.max(1)[1]
+                        if nc0 != 0:
+                            output_c0 = aux_c0(w0)
+                            loss_c0 = loss_fn(output_c0, c0.long())
+                            predictions_c0 = output_c0.max(1)[1]
+                            accuracy_c0 = accuracy_score(c0.detach().cpu().numpy(), predictions_c0.detach().cpu().numpy())
 
-                        output_c1 = aux_c1(w)
-                        loss_c1 = loss_fn(output_c1, c1.long())
-                        predictions_c1 = output_c1.max(1)[1]
+                        if ny1 != 0:
+                            output_y1 = aux_y1(z1)
+                            loss_y1 = loss_fn(output_y1, y1.long())
+                            predictions_y1 = output_y1.max(1)[1]
+                            accuracy_y1 = accuracy_score(y1.detach().cpu().numpy(), predictions_y1.detach().cpu().numpy())
 
-                        accuracy_y0 = accuracy_score(y0.detach().cpu().numpy(), predictions_y0.detach().cpu().numpy())
-                        accuracy_y1 = accuracy_score(y1.detach().cpu().numpy(), predictions_y1.detach().cpu().numpy())
-                        accuracy_c0 = accuracy_score(c0.detach().cpu().numpy(), predictions_c0.detach().cpu().numpy())
-                        accuracy_c1 = accuracy_score(c1.detach().cpu().numpy(), predictions_c1.detach().cpu().numpy())
+                        if nc1 != 0:
+                            output_c1 = aux_c1(w1)
+                            loss_c1 = loss_fn(output_c1, c1.long())
+                            predictions_c1 = output_c1.max(1)[1]
+                            accuracy_c1 = accuracy_score(c1.detach().cpu().numpy(), predictions_c1.detach().cpu().numpy())
 
                         # Multiply by len(x) because the final batch of DataLoader may be smaller (drop_last=False).
                         valid_accuracies_batches_y.append(ny0*accuracy_y0 + ny1*accuracy_y1)
                         valid_accuracies_batches_c.append(nc0*accuracy_c0 + nc1*accuracy_c1)
 
-                    aux_y.train()
-                    aux_c.train()
+                    aux_y0.train()
+                    aux_c0.train()
+                    aux_y1.train()
+                    aux_c1.train()
                     
                 # Append average validation accuracy to list.
                 valid_accuracies_y.append(np.sum(valid_accuracies_batches_y) / n_valid)
@@ -944,6 +994,8 @@ def train_adversary_dual(net, csvae, lr, device, train_loader, valid_loader, pat
     print("Finished training.")
 
     steps = (np.arange(len(train_accuracies_y), dtype=int) + 1) * validation_every_steps
+
+    tag = 'l' if net == l_adversary else 'nl'
 
     plt.figure()
     plt.plot(steps, train_accuracies_y, label='train')
@@ -963,18 +1015,22 @@ def train_adversary_dual(net, csvae, lr, device, train_loader, valid_loader, pat
     plt.title("Train and validation accuracy for predicting c")
     plt.savefig(f'{path}/acc_c_{tag}.png')
 
-    torch.save(aux_y.state_dict(), f'{path}/adv_y_{tag}.pt')
-    torch.save(aux_c.state_dict(), f'{path}/adv_c_{tag}.pt')
+    torch.save(aux_y0.state_dict(), f'{path}/adv_y0_{tag}.pt')
+    torch.save(aux_c0.state_dict(), f'{path}/adv_c0_{tag}.pt')
+    torch.save(aux_y1.state_dict(), f'{path}/adv_y1_{tag}.pt')
+    torch.save(aux_c1.state_dict(), f'{path}/adv_c1_{tag}.pt')
 
-    return aux_y, aux_c
+    return aux_y0, aux_c0, aux_y1, aux_c1
 
 def eval_adversary_dual(csvae, aux_y0, aux_c0, aux_y1, aux_c1, test_loader, device):
     # Evaluate test set
     loss_fn = nn.CrossEntropyLoss()
     n_test = len(test_loader.dataset)
     with torch.no_grad():
-        aux_y.eval()
-        aux_c.eval()
+        aux_y0.eval()
+        aux_c0.eval()
+        aux_y1.eval()
+        aux_c1.eval()
         test_accuracies_y = []
         test_accuracies_c = []
         for x, y, c in test_loader:
@@ -996,35 +1052,43 @@ def eval_adversary_dual(csvae, aux_y0, aux_c0, aux_y1, aux_c1, test_loader, devi
             y1 = y[c == 1]
             c0 = c[y == 0]
             c1 = c[y == 1]
-            nc0 = sum(c==0)
-            nc1 = sum(c==1)
-            ny0 = sum(y==0)
-            ny1 = sum(y==1)
+            ny0 = len(y0)
+            ny1 = len(y1)
+            nc0 = len(c0)
+            nc1 = len(c1)
 
-            output_y0 = aux_y0(z)
-            loss_y0 = loss_fn(output_y0, y0.long())
-            predictions_y0 = output_y0.max(1)[1]
+            accuracy_y0 = 0.
+            accuracy_y1 = 0.
+            accuracy_c0 = 0.
+            accuracy_c1 = 0.
 
-            output_c0 = aux_c0(w)
-            loss_c0 = loss_fn(output_c0, c0.long())
-            predictions_c0 = output_c0.max(1)[1]
+            if ny0 != 0:
+                output_y0 = aux_y0(z0)
+                loss_y0 = loss_fn(output_y0, y0.long())
+                predictions_y0 = output_y0.max(1)[1]
+                accuracy_y0 = accuracy_score(y0.detach().cpu().numpy(), predictions_y0.detach().cpu().numpy())
 
-            output_y1 = aux_y1(z)
-            loss_y1 = loss_fn(output_y1, y1.long())
-            predictions_y1 = output_y1.max(1)[1]
+            if nc0 != 0:
+                output_c0 = aux_c0(w0)
+                loss_c0 = loss_fn(output_c0, c0.long())
+                predictions_c0 = output_c0.max(1)[1]
+                accuracy_c0 = accuracy_score(c0.detach().cpu().numpy(), predictions_c0.detach().cpu().numpy())
 
-            output_c1 = aux_c1(w)
-            loss_c1 = loss_fn(output_c1, c1.long())
-            predictions_c1 = output_c1.max(1)[1]
+            if ny1 != 0:
+                output_y1 = aux_y1(z1)
+                loss_y1 = loss_fn(output_y1, y1.long())
+                predictions_y1 = output_y1.max(1)[1]
+                accuracy_y1 = accuracy_score(y1.detach().cpu().numpy(), predictions_y1.detach().cpu().numpy())
 
-            accuracy_y0 = accuracy_score(y0.detach().cpu().numpy(), predictions_y0.detach().cpu().numpy())
-            accuracy_y1 = accuracy_score(y1.detach().cpu().numpy(), predictions_y1.detach().cpu().numpy())
-            accuracy_c0 = accuracy_score(c0.detach().cpu().numpy(), predictions_c0.detach().cpu().numpy())
-            accuracy_c1 = accuracy_score(c1.detach().cpu().numpy(), predictions_c1.detach().cpu().numpy())
+            if nc1 != 0:
+                output_c1 = aux_c1(w1)
+                loss_c1 = loss_fn(output_c1, c1.long())
+                predictions_c1 = output_c1.max(1)[1]
+                accuracy_c1 = accuracy_score(c1.detach().cpu().numpy(), predictions_c1.detach().cpu().numpy())
 
             # Multiply by len(x) because the final batch of DataLoader may be smaller (drop_last=False).
-            valid_accuracies_batches_y.append(ny0*accuracy_y0 + ny1*accuracy_y1)
-            valid_accuracies_batches_c.append(nc0*accuracy_c0 + nc1*accuracy_c1)
+            test_accuracies_y.append(ny0*accuracy_y0 + ny1*accuracy_y1)
+            test_accuracies_c.append(nc0*accuracy_c0 + nc1*accuracy_c1)
 
         test_accuracy_y = np.sum(test_accuracies_y) / n_test
         test_accuracy_c = np.sum(test_accuracies_c) / n_test
@@ -1088,4 +1152,14 @@ def eval_by(val_loader, csvae, vi, device):
             log_px.append(diagnostics['log_px'].mean().item())
             qy.append(diagnostics['qy'].mean().item())
             
-    return np.mean(log_px), np.mean(qy)    
+    return np.mean(log_px), np.mean(qy)
+
+def load_adversary(adversary, num_input, path, device):
+    aux = adversary(num_input)
+    aux_state = torch.load(path, map_location=device)
+    aux.load_state_dict(aux_state)
+    aux = aux.to(device)
+    return aux
+
+def predict(aux):
+    return lambda x: F.softmax(aux(torch.tensor(x, dtype=torch.float)), dim=1)[:, 1].data.numpy()
