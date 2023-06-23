@@ -1,0 +1,18 @@
+seed: 0
+color: true
+batch_size: 64
+lr: 0.0005
+epochs: 200
+m0: 6
+s0: 1
+m1: 0
+s1: 1
+n_median: 20
+
+hydra:
+  job:
+    chdir: true
+  job_logging:
+    disable_existing_loggers: true
+  run:
+    dir: outputs/${hydra.job.name}/${hydra.job.override_dirname}
