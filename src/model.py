@@ -264,7 +264,7 @@ class DSVAE_MNIST(nn.Module):
                  s0: float = 1, 
                  m1: float = 0, 
                  s1: float = 0.1) -> None:
-        super(DSVAE_prior_MNIST, self).__init__()  
+        super(DSVAE_MNIST, self).__init__()  
 
         self.x_dim = x_dim
         self.w_dim = w_dim
@@ -491,7 +491,7 @@ class VI_adv_marg(nn.Module):
 
         #Train the encoder to NOT predict c from w
         qc = aux_c(w)
-        hw = qyw.entropy() 
+        hw = qc.entropy() 
         m3 = - self.bhw * hw 
         # log_qc = qc.log_prob(c)
         # exp_log_qc = torch.exp(log_qc)
@@ -569,7 +569,7 @@ class VI_adv_cond(nn.Module):
 
         #Train the encoder to NOT predict c from w and y
         qc = aux_c(wy)
-        hw = qyw.entropy() 
+        hw = qc.entropy() 
         m3 = - self.bhw * hw 
         # log_qc = qc.log_prob(c)
         # exp_log_qc = torch.exp(log_qc)
@@ -582,14 +582,14 @@ class VI_adv_cond(nn.Module):
         qyz = aux_y(zc.detach())  #detach: to ONLY update the AUX net
         log_qyz = qyz.log_prob(y)
         exp_log_qyz = torch.exp(log_qyz)
-        ny = self.byz * exp_log_qyz
+        ny = self.byz * log_qyz
         aux_y_loss = - ny.mean()
 
         #Train the aux net to predict c from w and y
         qc = aux_c(wy.detach())
         log_qc = qc.log_prob(c)
         exp_log_qc = torch.exp(log_qc)
-        nc = self.bc * exp_log_qc
+        nc = self.bc * log_qc
         aux_c_loss = - nc.mean()
         
         # prepare the output
@@ -640,14 +640,12 @@ class VI_adv_cond_info(nn.Module):
         #Train the encoder to NOT predict y from z and c
         qyz = aux_y(zc) #not detached update the encoder!
         log_qyz = qyz.log_prob(y)
-        exp_log_qyz = torch.exp(log_qyz)
-        m2 = self.bhz*exp_log_qyz
+        m2 = self.bhz*log_qyz
 
         #Train the encoder to NOT predict c from w and y
         qc = aux_c(wy)
         log_qc = qc.log_prob(c)
-        exp_log_qc = torch.exp(log_qc)
-        m3 = self.bhw*exp_log_qc
+        m3 = self.bhw*log_qc
 
         m = m1 + m2 + m3
         csvaeLoss = m.mean()
@@ -656,14 +654,14 @@ class VI_adv_cond_info(nn.Module):
         qyz = aux_y(zc.detach())  #detach: to ONLY update the AUX net
         log_qyz = qyz.log_prob(y)
         exp_log_qyz = torch.exp(log_qyz)
-        ny = self.byz * exp_log_qyz
+        ny = self.byz * log_qyz
         aux_y_loss = - ny.mean()
 
         #Train the aux net to predict c from w and y
         qc = aux_c(wy.detach())
         log_qc = qc.log_prob(c)
         exp_log_qc = torch.exp(log_qc)
-        nc = self.bc * exp_log_qc
+        nc = self.bc * log_qc
         aux_c_loss = - nc.mean()
         
         # prepare the output
@@ -674,7 +672,8 @@ class VI_adv_cond_info(nn.Module):
 
 class VI_adv_dual(nn.Module):
     """
-    Conditional adversarial model with one adversary per value for the conditioned attribute
+    Conditional adversarial model with one adversary per value for the conditioned attribute using the standard adversarial training
+    approach 
     """
     def __init__(self, bx, bw, bz, bhw, bhz, byw, byz, bc):
         super().__init__()
@@ -690,7 +689,7 @@ class VI_adv_dual(nn.Module):
     def adversarial_loss(self, aux: nn.Module, z:Tensor, y:Tensor):
         q = aux(z)
         log_q = reduce(q.log_prob(y))
-        return torch.exp(log_q)
+        return log_q
         
     def forward(self, model:nn.Module, aux_y_0:nn.Module, aux_c_0:nn.Module, aux_y_1:nn.Module, aux_c_1:nn.Module, x:Tensor, y:Tensor, c:Tensor, device:torch.device) -> Tuple[Tensor, Dict]:
         
@@ -734,15 +733,17 @@ class VI_adv_dual(nn.Module):
         zero_tensor = torch.tensor([0.], device=device, requires_grad=True)
 
         #Train the encoder to NOT predict y from z given c
-        aux_y0_loss = self.adversarial_loss(aux_y_0, z0, y0).mean() if ny0 != 0 else zero_tensor
-        aux_y1_loss = self.adversarial_loss(aux_y_1, z1, y1).mean() if ny1 != 0 else zero_tensor
-        exp_log_qyz = (ny0*aux_y0_loss + ny1*aux_y1_loss)/(ny0+ny1)
-        m2 = self.bhz*exp_log_qyz
+        log_qyz_y0 = self.adversarial_loss(aux_y_0, z0, y0).mean() if ny0 != 0 else zero_tensor
+        log_qyz_y1 = self.adversarial_loss(aux_y_1, z1, y1).mean() if ny1 != 0 else zero_tensor
+        log_qyz = (ny0*log_qyz_y0 + ny1*log_qyz_y1)/(ny0+ny1)
+        qyz = torch.exp(log_qyz)
+        m2 = self.bhz*log_qyz
 
         #Train the encoder to NOT predict c from w given y
-        aux_c0_loss = self.adversarial_loss(aux_c_0, w0, c0).mean() if nc0 != 0 else zero_tensor
-        aux_c1_loss = self.adversarial_loss(aux_c_1, w1, c1).mean() if nc1 != 0 else zero_tensor
-        exp_log_qc = (nc0*aux_c0_loss + nc1*aux_c1_loss)/(nc0+nc1)
+        log_qc_c0 = self.adversarial_loss(aux_c_0, w0, c0).mean() if nc0 != 0 else zero_tensor
+        log_qc_c1 = self.adversarial_loss(aux_c_1, w1, c1).mean() if nc1 != 0 else zero_tensor
+        log_qc = (nc0*aux_c0_loss + nc1*aux_c1_loss)/(nc0+nc1)
+        qc = torch.exp(log_qc)
         m3 = self.bhw*exp_log_qc
 
         csvaeLoss = m1.mean() + m2 + m3
@@ -757,13 +758,13 @@ class VI_adv_dual(nn.Module):
         
         # prepare the output
         with torch.no_grad():
-            diagnostics = {'m1': m1, 'log_px':log_px, 'kl_w': kl_w, 'kl_z': kl_z, 'qy': exp_log_qyz, 'qc': exp_log_qc, 'm': csvaeLoss, 'log_qy': log_qyw}
+            diagnostics = {'m1': m1, 'log_px':log_px, 'kl_w': kl_w, 'kl_z': kl_z, 'qy': qyz, 'qc': qc, 'm': csvaeLoss, 'log_qy': log_qyw}
             
         return csvaeLoss, aux_y_0_loss, aux_c_0_loss, aux_y_1_loss, aux_c_1_loss, diagnostics, outputs
 
 class VI_DANN(nn.Module):
     """
-    Based on (Conditional) Domain-Adversarial Neural Network:
+    Conditional adversarial model based on (Conditional) Domain-Adversarial Neural Network:
     https://github.com/facebookresearch/DomainBed/blob/main/domainbed/algorithms.py
     """
     def __init__(self, bx, bw, bz, bhw, bhz, byw, byz, bc, conditional, w_dim=2, z_dim=2):
@@ -814,14 +815,12 @@ class VI_DANN(nn.Module):
         #Train the encoder to NOT predict y from z and c
         qyz = aux_y(z_input) #not detached update the encoder!
         log_qyz = qyz.log_prob(y)
-        exp_log_qyz = torch.exp(log_qyz)
-        m2 = self.bhz*exp_log_qyz
+        m2 = self.bhz*log_qyz
 
         #Train the encoder to NOT predict c from w and y
         qc = aux_c(w_input)
         log_qc = qc.log_prob(c)
-        exp_log_qc = torch.exp(log_qc)
-        m3 = self.bhw*exp_log_qc
+        m3 = self.bhw*log_qc
 
         m = m1 + m2 + m3
         csvaeLoss = m.mean()
@@ -830,14 +829,14 @@ class VI_DANN(nn.Module):
         qyz = aux_y(z_input.detach())  #detach: to ONLY update the AUX net
         log_qyz = qyz.log_prob(y)
         exp_log_qyz = torch.exp(log_qyz)
-        ny = self.byz * exp_log_qyz
+        ny = self.byz * log_qyz
         aux_y_loss = - ny.mean()
 
         #Train the aux net to predict c from w and y
         qc = aux_c(w_input.detach())
         log_qc = qc.log_prob(c)
         exp_log_qc = torch.exp(log_qc)
-        nc = self.bc * exp_log_qc
+        nc = self.bc * log_qc
         aux_c_loss = - nc.mean()
         
         # prepare the output
@@ -913,7 +912,7 @@ class VI_MMD_marg(nn.Module):
         
         # prepare the output
         with torch.no_grad():
-            diagnostics = {'loss_csvae': m, 'log_px':log_px, 'kl_w': kl_w, 'kl_z': kl_z, 'log_qy': log_qy, 'mmd_w': mmd_w, 'mmd_z': mmd_z}
+            diagnostics = {'loss_csvae': m, 'log_px':log_px, 'kl_w': kl_w, 'kl_z': kl_z, 'qy': torch.exp(log_qy), 'mmd_w': mmd_w, 'mmd_z': mmd_z}
             
         return loss, diagnostics, outputs
     
@@ -979,6 +978,6 @@ class VI_MMD_cond(nn.Module):
         
         # prepare the output
         with torch.no_grad():
-            diagnostics = {'loss_csvae': m, 'log_px':log_px, 'kl_w': kl_w, 'kl_z': kl_z, 'log_qy': log_qy, 'mmd_w': MMD_w, 'mmd_z': MMD_z}
+            diagnostics = {'loss_csvae': m, 'log_px':log_px, 'kl_w': kl_w, 'kl_z': kl_z, 'qy': torch.exp(log_qy), 'mmd_w': MMD_w, 'mmd_z': MMD_z}
             
         return loss, diagnostics, outputs

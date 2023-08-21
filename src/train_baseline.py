@@ -65,11 +65,20 @@ def main(cfg):
     location = wandb.run.dir
 
     hparams = cfg
-    e = hparams['e']
-    n = hparams['n']
-    data = str(int(e*100)) 
-    if n != 0:
-     data += f'_{int(n*100)}'
+
+    set_seed(hparams["seed"])
+    torch.backends.cudnn.deterministic = True
+    g = torch.Generator()
+    g.manual_seed(hparams["seed"])
+
+    e = hparams['e']           
+    data = str(int(e*100))
+
+    if 'n' in hparams.keys():
+        n = hparams['n']
+        if n != 0:
+            data += f'_{int(n*100)}'
+
     x_dim = 392
     data_path = f'{get_original_cwd()}/data'
     dataset_train = torch.load(f'{data_path}/cmnist_train_{data}.pt')
@@ -77,10 +86,8 @@ def main(cfg):
     dset_train = TensorDataset(dataset_train['images'], dataset_train['labels'], dataset_train['colors'])
     dset_val = TensorDataset(dataset_val['images'], dataset_val['labels'], dataset_val['colors'])
     batch_size = hparams['batch_size']
-    train_loader = DataLoader(dset_train, batch_size=batch_size, shuffle=True)
-    val_loader  = DataLoader(dset_val, batch_size=batch_size, shuffle=True)
-
-    torch.manual_seed(hparams["seed"])
+    train_loader = DataLoader(dset_train, batch_size=batch_size, shuffle=True, worker_init_fn=seed_worker, generator=g)
+    val_loader  = DataLoader(dset_val, batch_size=batch_size, shuffle=True, worker_init_fn=seed_worker, generator=g)
 
     m0 = hparams['m0']
     s0 = hparams['s0']

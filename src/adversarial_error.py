@@ -14,9 +14,6 @@ from typing import *
 from sklearn.metrics import accuracy_score
 import os
 
-def predict(aux):
-    return lambda x: F.softmax(aux(torch.tensor(x, dtype=torch.float)), dim=1)[:, 1].data.numpy()
-
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument('-input', type=str)

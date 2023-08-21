@@ -4,9 +4,10 @@ import hydra
 import wandb
 import torch
 from torch.utils.data import DataLoader, TensorDataset
+import torch.optim as optim
 from plotting import log_cmnist_plots
 from hydra.utils import get_original_cwd
-from utils import get_cmnist_accuracy, median_heuristic
+from utils import get_cmnist_accuracy, median_heuristic, set_seed, seed_worker
 import numpy as np
 import os
 import shutil
@@ -66,11 +67,18 @@ def main(cfg):
     location = wandb.run.dir
 
     hparams = cfg
+
+    set_seed(hparams["seed"])
+    torch.backends.cudnn.deterministic = True
+    g = torch.Generator()
+    g.manual_seed(hparams["seed"])
+
     e = hparams['e']
-    n = hparams['n']
     data = str(int(e*100)) 
-    if n != 0:
-     data += f'_{int(n*100)}'
+    if 'n' in hparams.keys():
+        n = hparams['n']
+        if n != 0:
+            data += f'_{int(n*100)}'
     x_dim = 392
     data_path = f'{get_original_cwd()}/data'
     dataset_train = torch.load(f'{data_path}/cmnist_train_{data}.pt')
@@ -78,10 +86,8 @@ def main(cfg):
     dset_train = TensorDataset(dataset_train['images'], dataset_train['labels'], dataset_train['colors'])
     dset_val = TensorDataset(dataset_val['images'], dataset_val['labels'], dataset_val['colors'])
     batch_size = hparams['batch_size']
-    train_loader = DataLoader(dset_train, batch_size=batch_size, shuffle=True)
-    val_loader  = DataLoader(dset_val, batch_size=batch_size, shuffle=True)
-
-    torch.manual_seed(hparams["seed"])
+    train_loader = DataLoader(dset_train, batch_size=batch_size, shuffle=True, worker_init_fn=seed_worker, generator=g)
+    val_loader  = DataLoader(dset_val, batch_size=batch_size, shuffle=True, worker_init_fn=seed_worker, generator=g)
 
     m0 = hparams['m0']
     s0 = hparams['s0']
@@ -104,8 +110,11 @@ def main(cfg):
     lr = hparams['lr']
     optimizer = torch.optim.Adam(csvae.parameters(), lr=lr)
 
-    epoch = 0
     num_epochs = hparams['epochs']
+
+    if hparams['scheduler']:
+        num_epochs = 300
+        optim.lr_scheduler.MultiStepLR(optimizer, milestones=[pow(3, i) for i in range(5)], gamma=pow(0.1, 1/7))
 
     device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
     # move the model to the device

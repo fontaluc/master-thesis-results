@@ -123,30 +123,45 @@ def log_cmnist_plots(x, y, c, outputs, m0, s0, m1, s1, epoch, figsize = (10, 5))
     log_latent(y, outputs, m0, s0, m1, s1, epoch, label = "y", figsize = figsize)
     log_latent(c, outputs, m0, s0, m1, s1, epoch, label = "c", figsize = figsize)
 
-def visualize_latent_subspaces(csvae, dataloader, device, filename):
-    fig, axes = plt.subplots(2, 2, figsize=(10, 10))
+def plot_scatter(ax, X, y, marker='o', l=None, c=['tab:orange', 'tab:blue']):
+    colors = [c[int(i)] for i in y]
+    ax.scatter(X[:, 0], X[:, 1], c=colors, marker=marker, label=l, alpha=.33)
+
+def plot_latent_subspaces(axes, csvae, dataloader, device, marker='o', legend=True, labels = ['4', '9'], colors = ['red', 'green']):   
     with torch.no_grad():
         for x, y, c in dataloader:
             x = x.to(device)
             w = csvae.posteriorW(x).sample().cpu()
             z = csvae.posteriorZ(x).sample().cpu()
-            plot_scatter(axes[0, 0], w, y)
-            plot_scatter(axes[0, 1], w, c, c=['r', 'g'])
-            plot_scatter(axes[1, 0], z, y)
-            plot_scatter(axes[1, 1], z, c, c=['r', 'g'])
+            if legend:
+                for i in range(2):
+                        label = labels[i]
+                        color = colors[i] 
+                        plot_scatter(axes[0, 0],  w[y == i], [i]*sum(y==i), marker=marker, l=label, c=['tab:orange', 'tab:blue'])
+                        plot_scatter(axes[0, 1], w[c == i], [i]*sum(c==i), marker=marker, l=color, c=['r', 'g'])
+                legend=False
+            else:
+                plot_scatter(axes[0, 0], w, y, marker=marker)
+                plot_scatter(axes[0, 1], w, c, marker=marker, c=['r', 'g'])
+            plot_scatter(axes[1, 0], z, y, marker=marker)
+            plot_scatter(axes[1, 1], z, c, marker=marker, c=['r', 'g'])
+    
     for i in range(2):
         axes[0, i].set_xlabel('$w_0$')
         axes[0, i].set_ylabel('$w_1$')
         axes[1, i].set_xlabel('$z_0$')
         axes[1, i].set_ylabel('$z_1$')
-    plt.savefig(filename)
-    plt.close(fig)
+    axes[0, 0].legend()
+    axes[0, 1].legend()
+    return axes
 
-def plot_scatter(ax, X, y, c=['r', 'b']):
-    colors = [c[int(l)] for l in y]
-    ax.scatter(X[:, 0], X[:, 1], marker='o', c=colors, alpha=.33)
+def visualize_latent_subspaces(csvae, dataloader, device, filename, labels = ['4', '9'], colors = ['red', 'green']):
+    fig, axes = plt.subplots(2, 2, figsize=(10, 10), constrained_layout=True)
+    plot_latent_subspaces(axes, csvae, dataloader, device, labels=labels, colors=colors)
+    plt.savefig(filename, bbox_inches='tight')
+    plt.close(fig)
     
-def visualize_label_counterfactuals(data_loader, csvae, device, path, split, figsize = (10, 5), color=False, step=None):
+def visualize_label_counterfactuals(data_loader, csvae, device, path, figsize = (10, 5), color=False, step=None):
     """
     Visualize a batch of counterfactual images with respect to the digit label
     """
@@ -181,7 +196,7 @@ def visualize_label_counterfactuals(data_loader, csvae, device, path, split, fig
     axes[1].set_title('Counterfactuals')
     plot_samples(axes[1], x_CF, color)
 
-    plt.savefig(f'{path}/label-counterfactuals-{step}-{split}.png')
+    plt.savefig(path)
     plt.close(fig)
 
 def counterfactual_projection(train_loader, valid_loader, idx, csvae, step, path):

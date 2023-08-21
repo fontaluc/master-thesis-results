@@ -5,6 +5,7 @@ from model import AUX, MMD, nl_adversary, l_adversary
 import torch.nn as nn
 import torch.nn.functional as F
 from matplotlib import pyplot as plt
+import random
     
 def get_cmnist_accuracy(data_loader, classifier, device):
     targets = []
@@ -440,8 +441,9 @@ def train_marg_adversary(net, csvae, lr, device, train_loader, valid_loader, pat
 
     aux_y = net(z_dim=2)
     aux_c = net(z_dim=2)
-    aux_y = aux_y.to(device)
-    aux_c = aux_c.to(device)
+    aux_y.to(device)
+    aux_c.to(device)
+    csvae.to(device)
 
     optimizer_y = torch.optim.Adam(aux_y.parameters(), lr=lr)
     optimizer_c = torch.optim.Adam(aux_c.parameters(), lr=lr)
@@ -574,6 +576,9 @@ def eval_marg_adversary(csvae, aux_y, aux_c, test_loader, device):
     # Evaluate test set
     loss_fn = nn.CrossEntropyLoss()
     n_test = len(test_loader.dataset)
+    csvae.to(device)
+    aux_y.to(device)
+    aux_c.to(device)
     with torch.no_grad():
         aux_y.eval()
         aux_c.eval()
@@ -610,8 +615,9 @@ def train_cond_adversary(net, csvae, lr, device, train_loader, valid_loader, pat
 
     aux_y = net(z_dim=3)
     aux_c = net(z_dim=3)
-    aux_y = aux_y.to(device)
-    aux_c = aux_c.to(device)
+    aux_y.to(device)
+    aux_c.to(device)
+    csvae.to(device)
 
     optimizer_y = torch.optim.Adam(aux_y.parameters(), lr=lr)
     optimizer_c = torch.optim.Adam(aux_c.parameters(), lr=lr)
@@ -750,6 +756,9 @@ def eval_cond_adversary(csvae, aux_y, aux_c, test_loader, device):
     # Evaluate test set
     loss_fn = nn.CrossEntropyLoss()
     n_test = len(test_loader.dataset)
+    csvae.to(device)
+    aux_y.to(device)
+    aux_c.to(device)
     with torch.no_grad():
         aux_y.eval()
         aux_c.eval()
@@ -789,13 +798,15 @@ def train_adversary_dual(net, csvae, lr, device, train_loader, valid_loader, pat
 
     aux_y0 = net(z_dim=2)
     aux_c0 = net(z_dim=2)
-    aux_y0 = aux_y0.to(device)
-    aux_c0 = aux_c0.to(device)
+    aux_y0.to(device)
+    aux_c0.to(device)
 
     aux_y1 = net(z_dim=2)
     aux_c1 = net(z_dim=2)
-    aux_y1 = aux_y1.to(device)
-    aux_c1 = aux_c1.to(device)
+    aux_y1.to(device)
+    aux_c1.to(device)
+
+    csvae.to(device)
 
     optimizer_y0 = torch.optim.Adam(aux_y0.parameters(), lr=lr)
     optimizer_c0 = torch.optim.Adam(aux_c0.parameters(), lr=lr)
@@ -1026,6 +1037,11 @@ def eval_adversary_dual(csvae, aux_y0, aux_c0, aux_y1, aux_c1, test_loader, devi
     # Evaluate test set
     loss_fn = nn.CrossEntropyLoss()
     n_test = len(test_loader.dataset)
+    csvae.to(device)
+    aux_y0.to(device)
+    aux_c0.to(device)
+    aux_y1.to(device)
+    aux_c1.to(device)
     with torch.no_grad():
         aux_y0.eval()
         aux_c0.eval()
@@ -1095,6 +1111,7 @@ def eval_adversary_dual(csvae, aux_y0, aux_c0, aux_y1, aux_c1, test_loader, devi
         return test_accuracy_y, test_accuracy_c
 
 def get_conditional_mmd(dataset, csvae, device):
+    csvae.to(device)
     lw0, lw1, lz0, lz1 = median_heuristic(dataset, csvae, device, conditional=True)
     x = dataset['images']
     y = dataset['labels']
@@ -1102,15 +1119,23 @@ def get_conditional_mmd(dataset, csvae, device):
     with torch.no_grad():
         outputs = csvae(x.to(device), y.to(device))
     w, z = [outputs[k] for k in ["w", "z"]]
+    ny0 = sum(y==0)
+    ny1 = sum(y==1)
+    nc0 = sum(c==0)
+    nc1 = sum(c==1)
     mmd_w0 = MMD(w[(y == 0) & (c == 0)], w[(y == 0) & (c == 1)], lw0).item()
     mmd_w1 = MMD(w[(y == 1) & (c == 0)], w[(y == 1) & (c == 1)], lw1).item()
     mmd_z0 = MMD(z[(c == 0) & (y == 0)], z[(c == 0) & (y == 1)], lz0).item()
     mmd_z1 = MMD(z[(c == 1) & (y == 0)], z[(c == 1) & (y == 1)], lz1).item()
-    return mmd_w0, mmd_w1, mmd_z0, mmd_z1
+    mmd_w = (ny0*mmd_w0 + ny1*mmd_w1)/(ny0 + ny1)
+    mmd_z = (nc0*mmd_z0 + nc1*mmd_z1)/(nc0 + nc1)
+    return mmd_w, mmd_z
 
-def get_color_switching_ratio(dataloader, csvae, device, step=2, thresh=0.01):
-    n_switch = 0
-    n_appear = 0
+def get_color_switching_ratio(dataloader, csvae, device, step=2, thresh=0.01, type='local'):
+    """
+    Count the number of counterfactuals which switched color (global) or in which the opposite color appear (local)
+    """
+    n = 0
     with torch.no_grad():
         for x, y, c in dataloader:
             x = x.to(device)
@@ -1126,22 +1151,26 @@ def get_color_switching_ratio(dataloader, csvae, device, step=2, thresh=0.01):
             dw = step*alpha*a 
             w_CF = w + dw
             x_CF = csvae.decode(w_CF, z).view(-1, 2, 14*14)
-            color_sum = x_CF.sum(axis=2)
+            if type == 'global':
+                color_sum = x_CF.sum(axis=2)
             for i in range(batch_size):
-                if color_sum[i, c[i]] - color_sum[i, 1-c[i]] < 0:
-                    n_switch += 1
-                if sum(x_CF[i, 1 - c[i]] > thresh) > 0:
-                    n_appear += 1
-    return n_switch, n_appear
+                if type == 'global':
+                    if color_sum[i, c[i]] - color_sum[i, 1-c[i]] < 0:
+                        n += 1
+                else:
+                    if sum(x_CF[i, 1 - c[i]] > thresh) > 0:
+                        n += 1
+    return n
 
-def eval_by(val_loader, csvae, vi, device):
+def eval_by(data_loader, csvae, vi, device):
+    '''
+    Evaluation measures for tuning by: reconstruction, classification accuracy
+    '''
     log_px = []
     qy = []
     with torch.no_grad():
         csvae.eval()
-        # Go through each batch in the training dataset using the loader
-        # Note that y is not necessarily known as it is here
-        for x, y, _ in val_loader:
+        for x, y, _ in data_loader:
             x = x.to(device)
             y = y.to(device)
             
@@ -1151,15 +1180,77 @@ def eval_by(val_loader, csvae, vi, device):
             # gather data for the current batch
             log_px.append(diagnostics['log_px'].mean().item())
             qy.append(diagnostics['qy'].mean().item())
-            
+
     return np.mean(log_px), np.mean(qy)
+
+def eval_bw(train_loader, val_loader, csvae, vi, device):
+    '''
+    Evaluation measures for tuning bw: reconstruction and overfitting
+    '''
+    log_px = []
+    kl_w_train = []
+    kl_w_val = []
+    with torch.no_grad():
+        csvae.eval()
+        # Go through each batch in the training dataset using the loader
+        # Note that y is not necessarily known as it is here
+        for x, y, _ in train_loader:
+            x = x.to(device)
+            y = y.to(device)
+            
+            # perform a forward pass through the model and compute the ELBO
+            loss, diagnostics, outputs = vi(csvae, x, y)
+            
+            # gather data for the current batch
+            kl_w_train.append(diagnostics['kl_w'].mean().item())
+
+        for x, y, _ in val_loader:
+            x = x.to(device)
+            y = y.to(device)
+            
+            # perform a forward pass through the model and compute the ELBO
+            loss, diagnostics, outputs = vi(csvae, x, y)
+            
+            # gather data for the current batch
+            log_px.append(diagnostics['log_px'].mean().item())
+            kl_w_val.append(diagnostics['kl_w'].mean().item())
+
+    return np.mean(log_px), np.mean(kl_w_train), np.mean(kl_w_val)
 
 def load_adversary(adversary, num_input, path, device):
     aux = adversary(num_input)
     aux_state = torch.load(path, map_location=device)
     aux.load_state_dict(aux_state)
-    aux = aux.to(device)
+    aux.to(device)
     return aux
 
 def predict(aux):
     return lambda x: F.softmax(aux(torch.tensor(x, dtype=torch.float)), dim=1)[:, 1].data.numpy()
+
+# Reproducibility functions
+def seed_worker(worker_id):
+    worker_seed = torch.initial_seed() % 2**32
+    np.random.seed(worker_seed)
+    random.seed(worker_seed)
+
+def set_seed(seed):
+    torch.manual_seed(seed)
+    random.seed(seed)
+    np.random.seed(seed)
+
+def counterfactuals(csvae, device, x, step=2):
+    """
+    Return counterfactuals for input x
+    """
+    with torch.no_grad():
+        x = x.to(device)
+        z = csvae.posteriorZ(x).sample()
+        layer = csvae.decoderY[0]
+        a = layer.weight
+        b = layer.bias
+        w = csvae.posteriorW(x).sample()
+        alpha = -(w @ a.view(2, 1) + b)/(a @ a.view(2, 1))
+        dw = step*alpha*a 
+        w_CF = w + dw
+        x_CF = csvae.decode(w_CF, z).cpu()
+    return x_CF

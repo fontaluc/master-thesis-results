@@ -7,7 +7,7 @@ from torch.utils.data import DataLoader, TensorDataset
 from plotting import log_cmnist_plots
 from hydra.utils import get_original_cwd
 from torch.utils.data import DataLoader
-from utils import get_cmnist_accuracy
+from utils import get_cmnist_accuracy, set_seed, seed_worker
 import os
 import shutil
 import numpy as np
@@ -85,6 +85,12 @@ def main(cfg):
     location = wandb.run.dir
 
     hparams = cfg
+
+    set_seed(hparams["seed"])
+    torch.backends.cudnn.deterministic = True
+    g = torch.Generator()
+    g.manual_seed(hparams["seed"])
+
     e = hparams['e']
     n = hparams['n']
     data = str(int(e*100)) 
@@ -97,10 +103,8 @@ def main(cfg):
     dset_train = TensorDataset(dataset_train['images'], dataset_train['labels'], dataset_train['colors'])
     dset_val = TensorDataset(dataset_val['images'], dataset_val['labels'], dataset_val['colors'])
     batch_size = hparams['batch_size']
-    train_loader = DataLoader(dset_train, batch_size=batch_size, shuffle=True)
-    val_loader  = DataLoader(dset_val, batch_size=batch_size, shuffle=True)
-
-    torch.manual_seed(hparams["seed"])
+    train_loader = DataLoader(dset_train, batch_size=batch_size, shuffle=True, worker_init_fn=seed_worker, generator=g)
+    val_loader  = DataLoader(dset_val, batch_size=batch_size, shuffle=True, worker_init_fn=seed_worker, generator=g)
 
     m0 = hparams['m0']
     s0 = hparams['s0']

@@ -4,11 +4,12 @@ from torch.utils.data.dataset import random_split
 from torchvision.datasets import MNIST
 import numpy as np
 
+def torch_bernoulli(p, size):
+  return (torch.rand(size) < p).float()
+def torch_xor(a, b):
+  return (a-b).abs() # Assumes both inputs are either 0 or 1
+
 def make_environment(images, labels, e, n):
-  def torch_bernoulli(p, size):
-    return (torch.rand(size) < p).float()
-  def torch_xor(a, b):
-    return (a-b).abs() # Assumes both inputs are either 0 or 1
   # 2x subsample for computational convenience
   images = images.reshape((-1, 28, 28))[:, ::2, ::2]
   # Label 4 as 0 and 9 as 1
