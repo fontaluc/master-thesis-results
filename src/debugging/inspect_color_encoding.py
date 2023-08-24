@@ -1,5 +1,5 @@
 from plotting import plot_scatter, plot_samples, counterfactual_projection
-from model import DSVAE_prior_MNIST
+from src.models.model import DSVAE_prior_MNIST
 from torch.utils.data import DataLoader, TensorDataset
 import torch 
 import argparse

@@ -1,13 +1,13 @@
 from collections import defaultdict
-from model import *
+from src.models.model import *
 import hydra
 import wandb
 import torch
 from torch.utils.data import DataLoader, TensorDataset
-from plotting import log_cmnist_plots
+from src.plotting import log_cmnist_plots
 from hydra.utils import get_original_cwd
 from torch.utils.data import DataLoader
-from utils import get_cmnist_accuracy, set_seed, seed_worker
+from src.utils import get_cmnist_accuracy, set_seed, seed_worker
 import os
 import shutil
 import numpy as np

@@ -130,4 +130,4 @@ if __name__ == "__main__":
 
     fig.tight_layout()
 
-    plt.savefig(f'outputs/results_e={e}_n={n}.png', bbox_inches='tight')
+    plt.savefig(f'outputs/figures/results_e={e}_n={n}.png', bbox_inches='tight')

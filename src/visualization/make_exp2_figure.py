@@ -1,12 +1,12 @@
 from matplotlib import pyplot as plt
-from plotting import plot_scatter
+from src.plotting import plot_scatter
 from torch.utils.data import DataLoader, TensorDataset
 import torch
-from model import DSVAE_prior_MNIST
+from src.models.model import DSVAE_prior_MNIST
 import numpy as np
 import yaml
 import argparse
-from utils import seed_worker, set_seed, counterfactuals
+from src.utils import seed_worker, set_seed, counterfactuals
 
 if __name__ == "__main__":
 
@@ -48,24 +48,13 @@ if __name__ == "__main__":
 
     labels = ['4', '9']
     colors = ['red', 'green']
-    plt.rcParams.update({'font.size': 15})
+    plt.rcParams.update({'axes.labelsize': 20, 'axes.titlesize': 20})
 
     bw=2
     by=1
 
-    fig1, axes1 = plt.subplots(5, 1, figsize=(5, 15), constrained_layout=True)
-    fig2, axes2 = plt.subplots(5, 1, figsize=(5, 15), constrained_layout=True)
-    f, axarr = plt.subplots(10, 6, figsize=(6, 10), constrained_layout=True)
-    # Plot 10 samples from the i.i.d. test set
-    x_in, y_in, _ = next(iter(test_loader_in))
-    labels_in = [4 if x.item() == 0 else 9 for x in y_in] 
-    for i, ax in enumerate(axarr[:, 0]):
-        ax.imshow(torch.cat((x_in[i].view(2, 14, 14), torch.zeros(1, 14, 14))).permute(1, 2, 0))
-        ax.set_xticks([])
-        ax.set_yticks([])
-        ax.set_xlabel(labels_in[i], fontsize=11)
-    axarr[0, 0].set_title('Input', fontsize=11)
-
+    fig1, axes1 = plt.subplots(2, 5, figsize=(25, 10), constrained_layout=True)
+    fig2, axes2 = plt.subplots(2, 5, figsize=(25, 10), constrained_layout=True)
     i=0
     for model in [('mmd', True), ('mmd', False), ('adversarial', True), ('adversarial', False), ('baseline', False)]:
 
@@ -99,32 +88,31 @@ if __name__ == "__main__":
                 x = x.to(device)
                 w = csvae.posteriorW(x).sample().cpu()
                 z = csvae.posteriorZ(x).sample().cpu()
-                plot_scatter(axes1[i], w, y)
+                plot_scatter(axes2[0, i], w, y)
+                plot_scatter(axes2[1, i], z, c, c=['r', 'g'])
             for x, y, c in test_loader_in:
                 x = x.to(device)
                 w = csvae.posteriorW(x).sample().cpu()
                 z = csvae.posteriorZ(x).sample().cpu()
-                plot_scatter(axes2[i], z, c, c=['r', 'g'])
+                plot_scatter(axes1[0, i], w, y)
+                plot_scatter(axes1[1, i], z, c, c=['r', 'g'])
 
-        axes1[i].set_xlabel('$w_0$')
-        axes1[i].set_ylabel('$w_1$')
-        axes1[i].set_title(title)
-        axes2[i].set_xlabel('$z_0$')
-        axes2[i].set_ylabel('$z_1$')
-        axes2[i].set_title(title)
+        axes1[0, i].set_xlabel('$w_0$')
+        axes1[0, i].set_ylabel('$w_1$')
+        axes1[0, i].set_title(title)
+        axes1[1, i].set_xlabel('$z_0$')
+        axes1[1, i].set_ylabel('$z_1$')
 
-        x_in_CF = counterfactuals(csvae, device, x_in)
-        for k, ax in enumerate(axarr[:, i+1]):
-            ax.imshow(torch.cat((x_in_CF[k].view(2, 14, 14), torch.zeros(1, 14, 14))).permute(1, 2, 0))
-            ax.axis('off')
-        axarr[0, i+1].set_title(title.replace(', ', '\n'), fontsize=11)
+        axes2[0, i].set_xlabel('$w_0$')
+        axes2[0, i].set_ylabel('$w_1$')
+        axes2[0, i].set_title(title)
+        axes2[1, i].set_xlabel('$z_0$')
+        axes2[1, i].set_ylabel('$z_1$')
 
         i += 1
 
-    fig1.savefig('outputs/exp2_latent_ood.png')
+    fig1.savefig('outputs/figures/exp2_latent_iid_slide.png')
     plt.close(fig1)
-    fig2.savefig('outputs/exp2_latent_iid.png')
+    fig2.savefig('outputs/figures/exp2_latent_ood_slide.png')
     plt.close(fig2)
-    f.savefig('outputs/exp2_cf.png')
-    plt.close(f)
         

@@ -1,13 +1,13 @@
 from collections import defaultdict
-from model import *
+from src.models.model import *
 import hydra
 import wandb
 import torch
 from torch.utils.data import DataLoader, TensorDataset
 import torch.optim as optim
-from plotting import log_cmnist_plots
+from src.plotting import log_cmnist_plots
 from hydra.utils import get_original_cwd
-from utils import get_cmnist_accuracy, median_heuristic, set_seed, seed_worker
+from src.utils import get_cmnist_accuracy, median_heuristic, set_seed, seed_worker
 import numpy as np
 import os
 import shutil

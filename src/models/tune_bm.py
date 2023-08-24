@@ -1,14 +1,14 @@
 from matplotlib import pyplot as plt
-from plotting import *
+from src.plotting import *
 from torch.utils.data import DataLoader
 import torch
 import torch.nn as nn
 from torch.utils.data import TensorDataset
-from model import DSVAE_prior_MNIST, VI_baseline, nl_adversary
+from src.models.model import DSVAE_prior_MNIST, VI_baseline, nl_adversary
 import argparse
 import numpy as np
 import yaml
-from utils import *
+from src.utils import *
 from typing import *
 from sklearn.metrics import accuracy_score
 

@@ -48,11 +48,25 @@ if __name__ == "__main__":
 
     labels = ['4', '9']
     colors = ['red', 'green']
-    plt.rcParams.update({'font.size': 22})
+    plt.rcParams.update({'font.size': 15})
 
     bw=2
     by=1
 
+    fig1, axes1 = plt.subplots(5, 1, figsize=(5, 15), constrained_layout=True)
+    fig2, axes2 = plt.subplots(5, 1, figsize=(5, 15), constrained_layout=True)
+    f, axarr = plt.subplots(10, 6, figsize=(6, 10), constrained_layout=True)
+    # Plot 10 samples from the i.i.d. test set
+    x_in, y_in, _ = next(iter(test_loader_in))
+    labels_in = [4 if x.item() == 0 else 9 for x in y_in] 
+    for i, ax in enumerate(axarr[:, 0]):
+        ax.imshow(torch.cat((x_in[i].view(2, 14, 14), torch.zeros(1, 14, 14))).permute(1, 2, 0))
+        ax.set_xticks([])
+        ax.set_yticks([])
+        ax.set_xlabel(labels_in[i], fontsize=11)
+    axarr[0, 0].set_title('Input', fontsize=11)
+
+    i=0
     for model in [('mmd', True), ('mmd', False), ('adversarial', True), ('adversarial', False), ('baseline', False)]:
 
         bm = 20 if model[1] else 1
@@ -80,66 +94,37 @@ if __name__ == "__main__":
         csvae.load_state_dict(csvae_state)
         csvae = csvae.to(device) 
 
-        fig, axes = plt.subplots(4, 2, figsize=(10, 20), constrained_layout=True)
         with torch.no_grad():
-            for x, y, c in test_loader_in:
-                x = x.to(device)
-                w = csvae.posteriorW(x).sample().cpu()
-                z = csvae.posteriorZ(x).sample().cpu()
-                plot_scatter(axes[0, 0], w, y)
-                plot_scatter(axes[1, 0], w, c, c=['r', 'g'])
-                plot_scatter(axes[2, 0], z, y)
-                plot_scatter(axes[3, 0], z, c, c=['r', 'g'])
             for x, y, c in test_loader_out:
                 x = x.to(device)
                 w = csvae.posteriorW(x).sample().cpu()
                 z = csvae.posteriorZ(x).sample().cpu()
-                plot_scatter(axes[0, 1], w, y)
-                plot_scatter(axes[1, 1], w, c, c=['r', 'g'])
-                plot_scatter(axes[2, 1], z, y)
-                plot_scatter(axes[3, 1], z, c, c=['r', 'g'])
-                        
-        for j in range(2):
-            for i in range(2):
-                axes[j, i].set_xlabel('$w_0$')
-                axes[j, i].set_ylabel('$w_1$')
-                axes[j+2, i].set_xlabel('$z_0$')
-                axes[j+2, i].set_ylabel('$z_1$')
-        axes[0, 0].set_title('i.i.d')
-        axes[0, 1].set_title('o.o.d')
-        fig.suptitle(title)
-        plt.savefig(f'outputs/exp2_{model[0]}_{model[1]}_latent.png')
-        plt.close(fig)
+                plot_scatter(axes1[i], w, y)
+            for x, y, c in test_loader_in:
+                x = x.to(device)
+                w = csvae.posteriorW(x).sample().cpu()
+                z = csvae.posteriorZ(x).sample().cpu()
+                plot_scatter(axes2[i], z, c, c=['r', 'g'])
 
-        x_in_CF = counterfactuals(csvae, device, x_in)  
-        f, axarr = plt.subplots(15, 2, figsize=(2, 15), constrained_layout=True)
-        for i, ax in enumerate(axarr[:, 0]):
-            ax.imshow(torch.cat((x_in[i].view(2, 14, 14), torch.zeros(1, 14, 14))).permute(1, 2, 0))
-            ax.set_xticks([])
-            ax.set_yticks([])
-            ax.set_xlabel(labels_in[i], fontsize=11)
-        for i, ax in enumerate(axarr[:, 1]):
-            ax.imshow(torch.cat((x_in_CF[i].view(2, 14, 14), torch.zeros(1, 14, 14))).permute(1, 2, 0))
+        axes1[i].set_xlabel('$w_0$')
+        axes1[i].set_ylabel('$w_1$')
+        axes1[i].set_title(title)
+        axes2[i].set_xlabel('$z_0$')
+        axes2[i].set_ylabel('$z_1$')
+        axes2[i].set_title(title)
+
+        x_in_CF = counterfactuals(csvae, device, x_in)
+        for k, ax in enumerate(axarr[:, i+1]):
+            ax.imshow(torch.cat((x_in_CF[k].view(2, 14, 14), torch.zeros(1, 14, 14))).permute(1, 2, 0))
             ax.axis('off')
-        axarr[0, 0].set_title('Input')
-        axarr[0, 1].set_title('CF')
-        plt.savefig(f'outputs/exp2_{model[0]}_{model[1]}_cf.png')
-        plt.close(f)
+        axarr[0, i+1].set_title(title.replace(', ', '\n'), fontsize=11)
 
-        # x_out, y_out, _ = next(iter(test_loader_out))
-        # x_out_CF = counterfactuals(csvae, device, x_out) 
-        # f, axarr = plt.subplots(15, 2, figsize=(2, 20), constrained_layout=True)
-        # for i, ax in enumerate(axarr[:, 0]):
-        #     ax.imshow(torch.cat((x_out[i].view(2, 14, 14), torch.zeros(1, 14, 14))).permute(1, 2, 0))
-        #     ax.set_xticks([])
-        #     ax.set_yticks([])
-        #     ax.set_ylabel(y_out[i])
-        # for i, ax in enumerate(axarr[:, 1]):
-        #     ax.imshow(torch.cat((x_out_CF[i].view(2, 14, 14), torch.zeros(1, 14, 14))).permute(1, 2, 0))
-        #     ax.axis('off')
-        # axarr[0, 0].set_title('Input')
-        # axarr[0, 1].set_title('CF')
-        # f.suptitle('o.o.d.')
-        # plt.savefig(f'outputs/exp2_{model[0]}_{model[1]}_ood.png')
-        # plt.close(f)
+        i += 1
+
+    fig1.savefig('outputs/figures/exp2_latent_ood.png')
+    plt.close(fig1)
+    fig2.savefig('outputs/figures/exp2_latent_iid.png')
+    plt.close(fig2)
+    f.savefig('outputs/figures/exp2_cf.png')
+    plt.close(f)
         

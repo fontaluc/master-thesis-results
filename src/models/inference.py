@@ -1,14 +1,14 @@
 from matplotlib import pyplot as plt
-from plotting import *
+from src.plotting import *
 from torch.utils.data import DataLoader
 import torch
 import torch.nn as nn
 from torch.utils.data import TensorDataset
-from model import DSVAE_prior_MNIST, nl_adversary
+from src.models.model import DSVAE_prior_MNIST, nl_adversary
 import argparse
 import numpy as np
 import yaml
-from utils import *
+from src.utils import *
 from typing import *
 from sklearn.metrics import accuracy_score
 
@@ -120,7 +120,7 @@ if __name__ == "__main__":
     if bx != 1:
         in_data += f'_{bx}'
     if 'n' in hparams.keys() and hparams['n'] == 0.2:
-        f = open(f'outputs/exp2_bw={bw}_by={by}.txt', 'a')
+        f = open(f'outputs/results/exp2_bw={bw}_by={by}.txt', 'a')
         f.write(f"{model},{conditional},{acc_in:.3f},{acc_out:.3f},{acc_y_marg_in:.3f},{acc_c_marg_in:.3f},{acc_y_cond_in:.3f},{acc_c_cond_in:.3f},{mmd_w_in:.3f},{mmd_z_in:.3f},{n_appear_in}\n")
         f.close()
 
@@ -131,15 +131,15 @@ if __name__ == "__main__":
             mmd_w_out, mmd_z_out = get_conditional_mmd(dataset_test_out, csvae, device)
             n_appear_out = get_color_switching_ratio(test_loader_out, csvae, device, step=args.step)
 
-            f = open(f'outputs/exp2_bw={bw}_by={by}_iid.txt', 'a')
+            f = open(f'outputs/results/exp2_bw={bw}_by={by}_iid.txt', 'a')
             f.write(f"{model},{conditional},{acc_in:.3f},{acc_y_marg_in:.3f},{acc_c_marg_in:.3f},{acc_y_cond_in:.3f},{acc_c_cond_in:.3f},{mmd_w_in:.3f},{mmd_z_in:.3f},{n_appear_in}\n")
             f.close()
 
-            f = open(f'outputs/exp2_bw={bw}_by={by}_ood.txt', 'a')
+            f = open(f'outputs/results/exp2_bw={bw}_by={by}_ood.txt', 'a')
             f.write(f"{model},{conditional},{acc_out:.3f},{acc_y_marg_out:.3f},{acc_c_marg_out:.3f},{acc_y_cond_out:.3f},{acc_c_cond_out:.3f},{mmd_w_out:.3f},{mmd_z_out:.3f},{n_appear_out}\n")
             f.close()
     else:
-        f = open(f'outputs/exp1.txt', 'a')
+        f = open(f'outputs/results/exp1.txt', 'a')
         f.write(f"{model},{conditional},{e_in},{acc_in:.3f},{acc_out:.3f},{acc_y_marg_in:.3f},{acc_c_marg_in:.3f},{acc_y_cond_in:.3f},{acc_c_cond_in:.3f},{mmd_w_in:.3f},{mmd_z_in:.3f},{n_appear_in}\n")
         f.close()
 

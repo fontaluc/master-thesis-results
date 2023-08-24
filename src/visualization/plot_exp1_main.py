@@ -1,12 +1,12 @@
 from matplotlib import pyplot as plt
-from plotting import plot_scatter, visualize_latent_subspaces
+from src.plotting import plot_scatter, visualize_latent_subspaces
 from torch.utils.data import DataLoader, TensorDataset
 import torch
-from model import DSVAE_prior_MNIST
+from src.models.model import DSVAE_prior_MNIST
 import numpy as np
 import yaml
 import argparse
-from utils import seed_worker, set_seed, counterfactuals
+from src.utils import seed_worker, set_seed, counterfactuals
 
 if __name__ == "__main__":
 
@@ -140,5 +140,5 @@ if __name__ == "__main__":
     axes[1, 0].set_title(r'MMD, marginal, $e=0.05$')
     axes[2, 0].set_title(r'Adversarial, marginal, $e=0.05$')
 
-    plt.savefig(f'outputs/exp1_marginal_latent.png',  bbox_inches='tight')
+    plt.savefig(f'outputs/figures/exp1_marginal_latent.png',  bbox_inches='tight')
     plt.close(fig)

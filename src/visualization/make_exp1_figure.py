@@ -1,12 +1,12 @@
 from matplotlib import pyplot as plt
-from plotting import plot_scatter, visualize_latent_subspaces
+from src.plotting import plot_scatter, visualize_latent_subspaces
 from torch.utils.data import DataLoader, TensorDataset
 import torch
-from model import DSVAE_prior_MNIST
+from src.models.model import DSVAE_prior_MNIST
 import numpy as np
 import yaml
 import argparse
-from utils import seed_worker, set_seed, counterfactuals
+from src.utils import seed_worker, set_seed, counterfactuals
 
 if __name__ == "__main__":
 
@@ -27,7 +27,7 @@ if __name__ == "__main__":
     x_dim = 392 
     data = 'cmnist'
     color = True
-    data_path = './data'
+    data_path = '../data'
 
     e=0.2    
     in_data = str(int(100*e))
@@ -84,5 +84,5 @@ if __name__ == "__main__":
         axes[i].set_xlabel('$w_0$')
         axes[i].set_ylabel('$w_1$')
         axes[i].legend()
-    plt.savefig(f'outputs/conditional_independence.png')
+    plt.savefig(f'outputs/figures/conditional_independence.png')
     plt.close(fig)

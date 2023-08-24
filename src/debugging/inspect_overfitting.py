@@ -1,5 +1,5 @@
-from plotting import visualize_latent_subspaces, visualize_decision_boundary
-from model import DSVAE_prior_MNIST
+from src.plotting import visualize_latent_subspaces, visualize_decision_boundary
+from src.models.model import DSVAE_prior_MNIST
 from torch.utils.data import DataLoader, TensorDataset
 import torch 
 import argparse

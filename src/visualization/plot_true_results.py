@@ -6,7 +6,7 @@ from model import DSVAE_prior_MNIST
 import numpy as np
 import yaml
 import argparse
-from utils import set_seed, seed_worker, counterfactuals
+from src.utils import set_seed, seed_worker, counterfactuals
 
 if __name__ == "__main__":
 
@@ -108,5 +108,5 @@ if __name__ == "__main__":
         fig.savefig(f'outputs/exp1_latent_{e}.png', bbox_inches='tight')
         plt.close(fig)
 
-        f.savefig(f'outputs/exp1_cf_{e}.png')
+        f.savefig(f'outputs/figures/exp1_cf_{e}.png')
         plt.close(f)

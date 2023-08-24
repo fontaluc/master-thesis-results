@@ -1,13 +1,13 @@
 from collections import defaultdict
-from model import *
+from src.models.model import *
 import hydra
 import wandb
 import torch
 from torch.utils.data import DataLoader, TensorDataset
-from plotting import log_cmnist_plots
+from src.lotting import log_cmnist_plots
 from hydra.utils import get_original_cwd
 from torch.utils.data import DataLoader
-from utils import get_cmnist_accuracy, set_seed, seed_worker
+from src.utils import get_cmnist_accuracy, set_seed, seed_worker
 import os
 import shutil
 import numpy as np
@@ -92,10 +92,11 @@ def main(cfg):
     g.manual_seed(hparams["seed"])
 
     e = hparams['e']
-    n = hparams['n']
     data = str(int(e*100)) 
-    if n != 0:
-     data += f'_{int(n*100)}'
+    if 'n' in hparams.keys():
+        n = hparams['n']
+        if n != 0:
+            data += f'_{int(n*100)}'
     x_dim = 392
     data_path = f'{get_original_cwd()}/data'
     dataset_train = torch.load(f'{data_path}/cmnist_train_{data}.pt')
@@ -126,7 +127,7 @@ def main(cfg):
     byz = hparams['byz']
     bc = hparams['bc']
     
-    vi = VI_adv_cond_info(bx, bw, bz, bhw, bhz, byw, byz, bc) if conditional else VI_adv_marg(bx, bw, bz, bhw, bhz, byw, byz, bc)
+    vi = VI_adv_cond(bx, bw, bz, bhw, bhz, byw, byz, bc) if conditional else VI_adv_marg(bx, bw, bz, bhw, bhz, byw, byz, bc)
 
     # The Adam optimizer works really well with VAEs.
     lr = hparams['lr']

@@ -1,5 +1,5 @@
 from matplotlib import pyplot as plt
-from plotting import *
+from src.plotting import *
 from torch.utils.data import DataLoader
 import torch
 import torch.nn as nn
@@ -8,7 +8,7 @@ from model import DSVAE_prior_MNIST, MMD, Adversarial, AUX
 import argparse
 import numpy as np
 import yaml
-from utils import median_heuristic, get_cmnist_accuracy
+from src.utils import median_heuristic, get_cmnist_accuracy
 from typing import *
 from sklearn.metrics import accuracy_score
 

@@ -1,7 +1,7 @@
 import torch
 from sklearn.metrics import accuracy_score
 import numpy as np
-from model import AUX, MMD, nl_adversary, l_adversary
+from src.models.model import AUX, MMD, nl_adversary, l_adversary
 import torch.nn as nn
 import torch.nn.functional as F
 from matplotlib import pyplot as plt
