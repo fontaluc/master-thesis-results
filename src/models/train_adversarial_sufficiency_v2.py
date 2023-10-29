@@ -14,7 +14,26 @@ import numpy as np
 
 torch.autograd.set_detect_anomaly(True)
 
-def train(train_loader,csvae, aux_y, aux_c, optimizer_csvae, optimizer_aux_y, optimizer_aux_c, vi, device, epoch):
+def train(
+    train_loader, 
+    csvae, 
+    aux_w, 
+    aux_wz, 
+    aux_wc, 
+    aux_z, 
+    aux_zw, 
+    aux_zy, 
+    opt_csvae, 
+    opt_aux_w, 
+    opt_aux_wz, 
+    opt_aux_wc, 
+    opt_aux_z, 
+    opt_aux_zw, 
+    opt_aux_zy, 
+    vi, 
+    device, 
+    epoch
+    ):
     training_epoch_data = defaultdict(list)
     csvae.train()
     
@@ -26,23 +45,46 @@ def train(train_loader,csvae, aux_y, aux_c, optimizer_csvae, optimizer_aux_y, op
         c = c.to(device)
         
         # perform a forward pass through the model and compute the ELBO
-        csvae_loss, aux_y_loss, aux_c_loss, diagnostics, outputs = vi(csvae, aux_y, aux_c, x, y, c)
+        csvae_loss, aux_w_loss, aux_wz_loss, aux_wc_loss, aux_z_loss, aux_zw_loss, aux_zy_loss, diagnostics, outputs = vi(   
+            csvae, 
+            aux_w, 
+            aux_wz, 
+            aux_wc, 
+            aux_z, 
+            aux_zw, 
+            aux_zy, 
+            x, 
+            y, 
+            c
+        )
         
-        optimizer_csvae.zero_grad()
+        opt_csvae.zero_grad()
         csvae_loss.backward()
-        # Debug NaN gradients with Beta distribution
-        # for param in csvae.decoder.parameters():
-        #     print(param.grad)
-        # torch.nn.utils.clip_grad_norm_(csvae.parameters(), max_norm=2.0)
-        optimizer_csvae.step()
+        opt_csvae.step()
 
-        optimizer_aux_y.zero_grad()
-        aux_y_loss.backward()
-        optimizer_aux_y.step()
+        opt_aux_w.zero_grad()
+        aux_w_loss.backward()
+        opt_aux_w.step()
 
-        optimizer_aux_c.zero_grad()
-        aux_c_loss.backward()
-        optimizer_aux_c.step()
+        opt_aux_wz.zero_grad()
+        aux_wz_loss.backward()
+        opt_aux_wz.step()
+
+        opt_aux_wc.zero_grad()
+        aux_wc_loss.backward()
+        opt_aux_wc.step()
+
+        opt_aux_z.zero_grad()
+        aux_z_loss.backward()
+        opt_aux_z.step()
+
+        opt_aux_zw.zero_grad()
+        aux_zw_loss.backward()
+        opt_aux_zw.step()
+
+        opt_aux_zy.zero_grad()
+        aux_zy_loss.backward()
+        opt_aux_zy.step()
         
         # gather data for the current batch
         for k, v in diagnostics.items():
@@ -52,10 +94,21 @@ def train(train_loader,csvae, aux_y, aux_c, optimizer_csvae, optimizer_aux_y, op
     for k, v in training_epoch_data.items():
         data = np.mean(training_epoch_data[k])
         wandb.log({f'{k}_train': data, 'epoch': epoch})
-    
-    return csvae_loss, aux_y_loss, aux_c_loss
 
-def eval(valid_loader, csvae, aux_y, aux_c, vi, device, epoch):
+
+def eval(
+    valid_loader, 
+    csvae, 
+    aux_w, 
+    aux_wz, 
+    aux_wc, 
+    aux_z, 
+    aux_zw, 
+    aux_zy,
+    vi, 
+    device, 
+    epoch
+    ):
     # Evaluate on a single batch, do not propagate gradients
     with torch.no_grad():
         csvae.eval()
@@ -67,17 +120,27 @@ def eval(valid_loader, csvae, aux_y, aux_c, vi, device, epoch):
         c = c.to(device)
         
         # perform a forward pass through the model and compute the ELBO
-        csvae_loss, aux_y_loss, aux_c_loss, diagnostics, outputs = vi(csvae, aux_y, aux_c, x, y, c)
-        
+        csvae_loss, aux_w_loss, aux_wz_loss, aux_wc_loss, aux_z_loss, aux_zw_loss, aux_zy_loss, diagnostics, outputs = vi(   
+            csvae, 
+            aux_w, 
+            aux_wz, 
+            aux_wc, 
+            aux_z, 
+            aux_zw, 
+            aux_zy, 
+            x, 
+            y, 
+            c
+        )
         # gather data for the validation step
         for k, v in diagnostics.items():
             data = v.mean().item()
             wandb.log({f'{k}_valid': data, 'epoch': epoch})
     
-    return csvae_loss, aux_y_loss, aux_c_loss, x, y, c, outputs
+    return x, y, c, outputs
 
 @hydra.main(
-    version_base=None, config_path="../config", config_name="default_config.yaml"
+    version_base=None, config_path="../../config", config_name="default_config.yaml"
 )
 def main(cfg):
     
@@ -111,29 +174,37 @@ def main(cfg):
     s0 = hparams['s0']
     m1 = hparams['m1']
     s1 = hparams['s1']
-    csvae = DSVAE_prior_MNIST(x_dim=x_dim, m0=m0, s0=s0, m1=m1, s1=s1)
-    conditional = hparams['conditional']
-    z_dim = 3 if conditional else 2
-    aux_y = AUX(z_dim)
-    aux_c = AUX(z_dim)
+    conv = hparams['conv']
+    csvae = DSCVAE_prior_MNIST(m0=m0, s0=s0, m1=m1, s1=s1) if conv else DSVAE_prior_MNIST(x_dim=x_dim, m0=m0, s0=s0, m1=m1, s1=s1)
+    w_dim = 2
+    z_dim = 2
+    lin = hparams['linear']
+    aux_w = AUX(w_dim, linear=lin)
+    aux_wz = AUX(w_dim + z_dim, linear=lin)
+    aux_wc = AUX(w_dim + 1, linear=lin)
+    aux_z = AUX(z_dim, linear=lin)
+    aux_zw = AUX(w_dim + z_dim, linear=lin)
+    aux_zy = AUX(z_dim + 1, linear=lin)
 
     # Evaluator: Variational Inference
     bx = hparams['bx']
     bw = hparams['bw']
     bz = hparams['bz']
-    byw = hparams['by']
+    by = hparams['by']
     bhw = hparams['bhw']
     bhz = hparams['bhz']
-    byz = hparams['byz']
-    bc = hparams['bc']
     
-    vi = VI_adv_cond(bx, bw, bz, bhw, bhz, byw, byz, bc) if conditional else VI_adv_marg(bx, bw, bz, bhw, bhz, byw, byz, bc)
+    vi = VI_sufficiency_v2(bx, bw, bz, bhw, bhz, by)
 
     # The Adam optimizer works really well with VAEs.
     lr = hparams['lr']
-    optimizer_csvae = torch.optim.Adam(csvae.parameters(), lr=lr)
-    optimizer_aux_y = torch.optim.Adam(aux_y.parameters(), lr=lr)
-    optimizer_aux_c = torch.optim.Adam(aux_c.parameters(), lr=lr)
+    opt_csvae = torch.optim.Adam(csvae.parameters(), lr=lr)
+    opt_aux_w = torch.optim.Adam(aux_w.parameters(), lr=lr)
+    opt_aux_wz = torch.optim.Adam(aux_wz.parameters(), lr=lr)
+    opt_aux_wc = torch.optim.Adam(aux_wc.parameters(), lr=lr)
+    opt_aux_z = torch.optim.Adam(aux_z.parameters(), lr=lr)
+    opt_aux_zw = torch.optim.Adam(aux_zw.parameters(), lr=lr)
+    opt_aux_zy = torch.optim.Adam(aux_zy.parameters(), lr=lr)
 
     epoch = 0
     num_epochs = hparams['epochs']
@@ -141,13 +212,48 @@ def main(cfg):
     device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
     # move the model to the device
     csvae = csvae.to(device)
-    aux_y = aux_y.to(device)
-    aux_c = aux_c.to(device)
+    aux_w = aux_w.to(device)
+    aux_wz = aux_wz.to(device)
+    aux_wc = aux_wc.to(device)
+    aux_z = aux_z.to(device)
+    aux_zw = aux_zw.to(device)
+    aux_zy = aux_zy.to(device)
 
     # training..
     for epoch in range(num_epochs):
-        _, _, _ = train(train_loader, csvae, aux_y, aux_c, optimizer_csvae, optimizer_aux_y, optimizer_aux_c, vi, device, epoch)
-        csvae_valid_loss, aux_y_valid_loss, aux_c_valid_loss, x, y, c, outputs = eval(val_loader, csvae, aux_y, aux_c, vi, device, epoch)
+        train(
+            train_loader, 
+            csvae, 
+            aux_w, 
+            aux_wz, 
+            aux_wc, 
+            aux_z, 
+            aux_zw, 
+            aux_zy, 
+            opt_csvae, 
+            opt_aux_w, 
+            opt_aux_wz, 
+            opt_aux_wc, 
+            opt_aux_z, 
+            opt_aux_zw, 
+            opt_aux_zy, 
+            vi, 
+            device, 
+            epoch
+            )
+        x, y, c, outputs = eval(
+            val_loader, 
+            csvae, 
+            aux_w, 
+            aux_wz, 
+            aux_wc, 
+            aux_z, 
+            aux_zw, 
+            aux_zy,
+            vi, 
+            device, 
+            epoch
+            )
         
         train_acc = get_cmnist_accuracy(train_loader, csvae.classifier, device)
         wandb.log({'train_acc': train_acc, 'epoch': epoch})         

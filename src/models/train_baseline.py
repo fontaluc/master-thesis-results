@@ -58,7 +58,7 @@ def eval(valid_loader, csvae, vi, device, epoch):
     return loss, x, y, c, outputs
 
 @hydra.main(
-    version_base=None, config_path="../config", config_name="default_config.yaml"
+    version_base=None, config_path="../../config", config_name="default_config.yaml"
 )
 def main(cfg):
     wandb.init(project="thesis")
@@ -93,8 +93,8 @@ def main(cfg):
     s0 = hparams['s0']
     m1 = hparams['m1']
     s1 = hparams['s1']
-    csvae = DSVAE_prior_MNIST(x_dim=x_dim, m0=m0, s0=s0, m1=m1, s1=s1)
-    #csvae = DSVAE_MNIST(x_dim=x_dim, m0=m0, s0=s0, m1=m1, s1=s1)
+    conv = hparams['conv']
+    csvae = DSVAE_prior_MNIST(x_dim=x_dim, m0=m0, s0=s0, m1=m1, s1=s1) if not conv else DSCVAE_prior_MNIST(m0=m0, s0=s0, m1=m1, s1=s1)
 
     # Evaluator: Variational Inference
     bx = hparams['bx']

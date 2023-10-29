@@ -4,7 +4,7 @@ from torch.utils.data import DataLoader
 import torch
 import torch.nn as nn
 from torch.utils.data import TensorDataset
-from src.models.model import DSVAE_prior_MNIST, VI_baseline
+from src.models.model import DSVAE_prior_MNIST, VI_baseline, DSCVAE_prior_MNIST
 import argparse
 import numpy as np
 import yaml
@@ -60,7 +60,13 @@ if __name__ == "__main__":
 
     device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 
-    csvae = DSVAE_prior_MNIST(x_dim)
+    m0 = hparams['m0']
+    s0 = hparams['s0']
+    m1 = hparams['m1']
+    s1 = hparams['s1']
+    conv = hparams['conv']
+
+    csvae = DSVAE_prior_MNIST(x_dim=x_dim, m0=m0, s0=s0, m1=m1, s1=s1) if not conv else DSCVAE_prior_MNIST(m0=m0, s0=s0, m1=m1, s1=s1)
     csvae_state = torch.load(f'{input_path}/csvae.pt', map_location=device)
     csvae.load_state_dict(csvae_state)
     csvae = csvae.to(device)
@@ -73,16 +79,16 @@ if __name__ == "__main__":
     vi = VI_baseline(bx, bw, bz, by)
 
     if args.bw:
-        log_px, kl_w, dkl_w = eval_bw(train_loader, val_loader, csvae, vi, device)
-        f = open(f'outputs/bw.txt', 'a')
-        f.write(f"{bw},{log_px:.3f},{kl_w:.3f},{dkl_w:.3f}\n")
+        log_px, kl_w_train, kl_w_val = eval_bw(train_loader, val_loader, csvae, vi, device)
+        f = open(f'outputs/results/bw_conv={conv}.txt', 'a')
+        f.write(f"{bw},{log_px:.3f},{kl_w_train:.3f},{kl_w_val:.3f}\n")
         f.close()
 
     if args.by:
         _, qy_train = eval_by(train_loader, csvae, vi, device)
         log_px_val, qy_val = eval_by(val_loader, csvae, vi, device)
-        f = open(f'outputs/by_bw={bw}.txt', 'a')
-        f.write(f"{by},{log_px:.3f},{qy_train:.3f},{qy_val:.3f}\n")
+        f = open(f'outputs/results/by_bw={bw}_conv={conv}.txt', 'a')
+        f.write(f"{by},{log_px_val:.3f},{qy_train:.3f},{qy_val:.3f}\n")
         f.close()
 
         visualize_latent_subspaces(csvae, val_loader, device, f"{input_path}/latent-valid.png")

@@ -85,7 +85,12 @@ if __name__ == "__main__":
 
     device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 
-    csvae = DSVAE_prior_MNIST(x_dim)
+    m0 = hparams['m0']
+    s0 = hparams['s0']
+    m1 = hparams['m1']
+    s1 = hparams['s1']
+    conv = hparams['conv'] if 'conv' in hparams.keys() else False
+    csvae = DSVAE_prior_MNIST(x_dim=x_dim, m0=m0, s0=s0, m1=m1, s1=s1) if not conv else DSCVAE_prior_MNIST(m0=m0, s0=s0, m1=m1, s1=s1)
     csvae_state = torch.load(f'{input_path}/csvae.pt', map_location=device)
     csvae.load_state_dict(csvae_state)
     csvae = csvae.to(device)
@@ -116,7 +121,7 @@ if __name__ == "__main__":
     mmd_w_in, mmd_z_in = get_conditional_mmd(dataset_test_in, csvae, device)
     n_appear_in = get_color_switching_ratio(test_loader_in, csvae, device, step=args.step)
     model = cfg_hydra['hydra']['job']['name']
-    conditional = False if model == 'train_baseline' else hparams['conditional']
+    conditional = hparams['conditional'] if model in ['train_mmd', 'train_adversarial'] else None
     if bx != 1:
         in_data += f'_{bx}'
     if 'n' in hparams.keys() and hparams['n'] == 0.2:

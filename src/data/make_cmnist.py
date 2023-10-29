@@ -28,16 +28,21 @@ def make_environment(images, labels, e, n):
   }
 
 def make_cmnist(data_path, e, seed, n):
+  """
+  Make CMNIST dataset
+  """
+  # Download MNIST dataset
   dset_train = MNIST(data_path, train=True,  download=True)
   dset_test  = MNIST(data_path, train=False, download=True)
 
+  # Find index of images which are labeled 4 or 9
   classes = torch.tensor([4, 9])
   train_index = (dset_train.targets[:, None] == classes).any(-1).nonzero(as_tuple=True)[0]
   test_index = (dset_test.targets[:, None] == classes).any(-1).nonzero(as_tuple=True)[0]
 
+  # Split the subset of MNIST with only 4 and 9 into train, validation, and test sets
   n_test = len(test_index)
-  n_train = len(train_index) - n_test
-
+  n_train = len(train_index) - n_test 
   generator = torch.Generator().manual_seed(seed)
   mnist_train = (dset_train.data[train_index][:n_train], dset_train.targets[train_index][:n_train])
   mnist_valid = (dset_train.data[train_index][n_train:], dset_train.targets[train_index][n_train:])
@@ -72,5 +77,5 @@ if __name__ == "__main__":
     parser.add_argument('-n', type=float, default=0)
     parser.add_argument('-seed', type=int, default=0)
     args = parser.parse_args()
-    data_path = './data'
+    data_path = '../data'
     make_cmnist(data_path, args.e, args.seed, args.n)

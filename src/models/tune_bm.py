@@ -61,7 +61,13 @@ if __name__ == "__main__":
 
     device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 
-    csvae = DSVAE_prior_MNIST(x_dim)
+    m0 = hparams['m0']
+    s0 = hparams['s0']
+    m1 = hparams['m1']
+    s1 = hparams['s1']
+    conv = hparams['conv']
+    lin = hparams['linear']
+    csvae = DSCVAE_prior_MNIST(m0=m0, s0=s0, m1=m1, s1=s1) if conv else DSVAE_prior_MNIST(x_dim=x_dim, m0=m0, s0=s0, m1=m1, s1=s1)
     csvae_state = torch.load(f'{input_path}/csvae.pt', map_location=device)
     csvae.load_state_dict(csvae_state)
     csvae = csvae.to(device)
@@ -77,35 +83,21 @@ if __name__ == "__main__":
         log_px, qy = eval_by(val_loader, csvae, vi, device)
 
         lr = hparams['lr']
-        if not os.path.exists(f'{input_path}/adv_y_cond_nl.pt'):
-            aux_y_cond, aux_c_cond = train_cond_adversary(nl_adversary, csvae, lr, device, train_loader, val_loader, input_path)
-            aux_y_cond.to(cpu)
-            aux_c_cond.to(cpu)
-        else:
-            aux_y_cond = load_adversary(nl_adversary, 3, f'{input_path}/adv_y_cond_nl.pt', cpu)
-            aux_c_cond = load_adversary(nl_adversary, 3, f'{input_path}/adv_c_cond_nl.pt', cpu)
+        aux_y_cond, aux_c_cond = train_cond_adversary(nl_adversary, csvae, lr, device, train_loader, val_loader, input_path)
+        aux_y_cond.to(cpu)
+        aux_c_cond.to(cpu)
         acc_y_cond, acc_c_cond = eval_cond_adversary(csvae, aux_y_cond, aux_c_cond, val_loader, cpu)
 
-        if not os.path.exists(f'{input_path}/adv_y_marg_nl.pt'):
-            aux_y_marg, aux_c_marg = train_marg_adversary(nl_adversary, csvae, lr, device, train_loader, val_loader, input_path)
-            aux_y_marg.to(cpu)
-            aux_c_marg.to(cpu)
-        else:
-            aux_y_marg = load_adversary(nl_adversary, 2, f'{input_path}/adv_y_marg_nl.pt', cpu)
-            aux_c_marg = load_adversary(nl_adversary, 2, f'{input_path}/adv_c_marg_nl.pt', cpu)
+        aux_y_marg, aux_c_marg = train_marg_adversary(nl_adversary, csvae, lr, device, train_loader, val_loader, input_path)
+        aux_y_marg.to(cpu)
+        aux_c_marg.to(cpu)
         acc_y_marg, acc_c_marg = eval_marg_adversary(csvae, aux_y_marg, aux_c_marg, val_loader, cpu)
 
-        if not os.path.exists(f'{input_path}/adv_y0_nl.pt'):
-            aux_y0, aux_c0, aux_y1, aux_c1 = train_adversary_dual(nl_adversary, csvae, lr, device, train_loader, val_loader, input_path)
-            aux_y0.to(cpu)
-            aux_c0.to(cpu)
-            aux_y1.to(cpu)
-            aux_c1.to(cpu)
-        else:
-            aux_y0 = load_adversary(nl_adversary, 2, f'{input_path}/adv_y0_nl.pt', cpu)
-            aux_c0 = load_adversary(nl_adversary, 2, f'{input_path}/adv_c0_nl.pt', cpu)
-            aux_y1 = load_adversary(nl_adversary, 2, f'{input_path}/adv_y1_nl.pt', cpu)
-            aux_c1 = load_adversary(nl_adversary, 2, f'{input_path}/adv_c1_nl.pt', cpu)
+        aux_y0, aux_c0, aux_y1, aux_c1 = train_adversary_dual(nl_adversary, csvae, lr, device, train_loader, val_loader, input_path)
+        aux_y0.to(cpu)
+        aux_c0.to(cpu)
+        aux_y1.to(cpu)
+        aux_c1.to(cpu)
         acc_y_dual, acc_c_dual = eval_adversary_dual(csvae, aux_y0, aux_c0, aux_y1, aux_c1, val_loader, cpu)
 
         mmd_w, mmd_z = get_conditional_mmd(dataset_val, csvae, device)
@@ -119,7 +111,7 @@ if __name__ == "__main__":
             bm = 0
         
         model = cfg_hydra['hydra']['job']['name'][6:]
-        f = open(f'outputs/bm_bw={bw}_by={by}.txt', 'a')
+        f = open(f'outputs/results/bm_bw={bw}_by={by}_conv={conv}_linear={lin}.txt', 'a')
         f.write(f"{model},{bm},{log_px:.3f},{qy:.3f},{acc_y_marg:.3f},{acc_c_marg:.3f},{acc_y_cond:.3f},{acc_c_cond:.3f},{acc_y_dual:.3f},{acc_c_dual:.3f},{mmd_w:.3f},{mmd_z:.3f},{n_appear}\n")
         f.close()
 

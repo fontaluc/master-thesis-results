@@ -4,30 +4,49 @@ import hydra
 import wandb
 import torch
 from torch.utils.data import DataLoader, TensorDataset
-import torch.optim as optim
 from src.plotting import log_cmnist_plots
 from hydra.utils import get_original_cwd
-from src.utils import get_cmnist_accuracy, median_heuristic, set_seed, seed_worker
-import numpy as np
+from torch.utils.data import DataLoader
+from src.utils import get_cmnist_accuracy, set_seed, seed_worker
 import os
 import shutil
+import numpy as np
 
-def train(train_loader, csvae, optimizer, vi, device, epoch):
+torch.autograd.set_detect_anomaly(True)
+
+def train(train_loader,csvae, aux_y, aux_c, optimizer_csvae, optimizer_aux_y, optimizer_aux_c, vi, device, epoch):
     training_epoch_data = defaultdict(list)
     csvae.train()
-    # Go through each batch in the training dataset using the loader
-    # Note that y is not necessarily known as it is here
+    
+    # Update CSVAE
     for x, y, c in train_loader:
         x = x.to(device)
         y = y.to(device)
         c = c.to(device)
         
         # perform a forward pass through the model and compute the ELBO
-        loss, diagnostics, outputs = vi(csvae, x, y, c)
+        csvae_loss, aux_y_loss, aux_c_loss, diagnostics, outputs = vi(csvae, aux_y, aux_c, x, y, c)
         
-        optimizer.zero_grad()
-        loss.backward()
-        optimizer.step()
+        optimizer_csvae.zero_grad()
+        csvae_loss.backward()
+        optimizer_csvae.step()
+
+    # Update AUX
+    for x, y, c in train_loader:
+        x = x.to(device)
+        y = y.to(device)
+        c = c.to(device)
+        
+        # perform a forward pass through the model and compute the ELBO
+        csvae_loss, aux_y_loss, aux_c_loss, diagnostics, outputs = vi(csvae, aux_y, aux_c, x, y, c)
+
+        optimizer_aux_y.zero_grad()
+        aux_y_loss.backward()
+        optimizer_aux_y.step()
+
+        optimizer_aux_c.zero_grad()
+        aux_c_loss.backward()
+        optimizer_aux_c.step()
         
         # gather data for the current batch
         for k, v in diagnostics.items():
@@ -37,32 +56,35 @@ def train(train_loader, csvae, optimizer, vi, device, epoch):
     for k, v in training_epoch_data.items():
         data = np.mean(training_epoch_data[k])
         wandb.log({f'{k}_train': data, 'epoch': epoch})
+    
+    return csvae_loss, aux_y_loss, aux_c_loss
 
-def eval(valid_loader, csvae, vi, device, epoch):
+def eval(valid_loader, csvae, aux_y, aux_c, vi, device, epoch):
     # Evaluate on a single batch, do not propagate gradients
     with torch.no_grad():
         csvae.eval()
         
         # Just load a single batch from the test loader
         x, y, c = next(iter(valid_loader))
-        x = x.to(device)
         y = y.to(device)
         c = c.to(device)
+        x = x.to(device)
         
         # perform a forward pass through the model and compute the ELBO
-        loss, diagnostics, outputs = vi(csvae, x, y, c)
+        csvae_loss, aux_y_loss, aux_c_loss, diagnostics, outputs = vi(csvae, aux_y, aux_c, x, y, c)
         
         # gather data for the validation step
         for k, v in diagnostics.items():
             data = v.mean().item()
             wandb.log({f'{k}_valid': data, 'epoch': epoch})
     
-    return loss, x, y, c, outputs
+    return csvae_loss, aux_y_loss, aux_c_loss, x, y, c, outputs
 
 @hydra.main(
     version_base=None, config_path="../../config", config_name="default_config.yaml"
 )
 def main(cfg):
+    
     wandb.init(project="thesis")
     location = wandb.run.dir
 
@@ -94,54 +116,45 @@ def main(cfg):
     m1 = hparams['m1']
     s1 = hparams['s1']
     csvae = DSVAE_prior_MNIST(x_dim=x_dim, m0=m0, s0=s0, m1=m1, s1=s1)
+    conditional = hparams['conditional']
+    z_dim = 3 if conditional else 2
+    aux_y = AUX(z_dim)
+    aux_c = AUX(z_dim)
 
     # Evaluator: Variational Inference
     bx = hparams['bx']
     bw = hparams['bw']
     bz = hparams['bz']
-    by = hparams['by']
-    bmz = hparams['bmz']
-    bmw = hparams['bmw']
-    n_median = hparams['n_median']
-    conditional = hparams['conditional']
-    vi = VI_MMD_cond(bx, bw, bz, by, bmw, bmz) if conditional else VI_MMD_marg(bx, bw, bz, by, bmw, bmz)
+    byw = hparams['by']
+    bhw = hparams['bhw']
+    bhz = hparams['bhz']
+    byz = hparams['byz']
+    bc = hparams['bc']
+    
+    vi = VI_adv_cond(bx, bw, bz, bhw, bhz, byw, byz, bc) if conditional else VI_adv_marg(bx, bw, bz, bhw, bhz, byw, byz, bc)
 
     # The Adam optimizer works really well with VAEs.
     lr = hparams['lr']
-    optimizer = torch.optim.Adam(csvae.parameters(), lr=lr)
+    optimizer_csvae = torch.optim.Adam(csvae.parameters(), lr=lr)
+    optimizer_aux_y = torch.optim.Adam(aux_y.parameters(), lr=lr)
+    optimizer_aux_c = torch.optim.Adam(aux_c.parameters(), lr=lr)
 
+    epoch = 0
     num_epochs = hparams['epochs']
-
-    if hparams['scheduler']:
-        num_epochs = 300
-        optim.lr_scheduler.MultiStepLR(optimizer, milestones=[pow(3, i) for i in range(5)], gamma=pow(0.1, 1/7))
 
     device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
     # move the model to the device
     csvae = csvae.to(device)
+    aux_y = aux_y.to(device)
+    aux_c = aux_c.to(device)
 
     # training..
     for epoch in range(num_epochs):
-
-        if epoch % n_median == 0:
-            lengthscales = median_heuristic(dataset_train, csvae, device, conditional)
-            vi.set_lengthscale_(*lengthscales)
-            if conditional:
-                lw0, lw1, lz0, lz1 = lengthscales
-                wandb.log({'lw0': lw0, 'epoch': epoch})
-                wandb.log({'lz0': lz0, 'epoch': epoch})
-                wandb.log({'lw1': lw1, 'epoch': epoch})
-                wandb.log({'lz1': lz1, 'epoch': epoch}) 
-            else:
-                lw, lz = lengthscales
-                wandb.log({'lw': lw, 'epoch': epoch})
-                wandb.log({'lz': lz, 'epoch': epoch})  
-
-        train(train_loader, csvae, optimizer, vi, device, epoch)
-        loss, x, y, c, outputs = eval(val_loader, csvae, vi, device, epoch)
+        _, _, _ = train(train_loader, csvae, aux_y, aux_c, optimizer_csvae, optimizer_aux_y, optimizer_aux_c, vi, device, epoch)
+        csvae_valid_loss, aux_y_valid_loss, aux_c_valid_loss, x, y, c, outputs = eval(val_loader, csvae, aux_y, aux_c, vi, device, epoch)
         
         train_acc = get_cmnist_accuracy(train_loader, csvae.classifier, device)
-        wandb.log({'train_acc': train_acc, 'epoch': epoch})
+        wandb.log({'train_acc': train_acc, 'epoch': epoch})         
         log_cmnist_plots(x, y, c, outputs, m0, s0, m1, s1, epoch)
 
     torch.save(csvae.state_dict(), 'csvae.pt')
